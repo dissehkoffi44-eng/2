@@ -190,7 +190,8 @@ def get_diatonic_chords(key):
         chords.append({
             'roman': roman_numerals[i],
             'name': f"{chord_root}{ctype}",
-            'notes': ' '.join(chord_notes)
+            'notes': ' '.join(chord_notes),
+            'notes_list': chord_notes  # Ajout pour test consonance
         })
     
     return chords
@@ -311,6 +312,12 @@ def seconds_to_mmss(seconds):
     secs = int(seconds % 60)
     return f"{mins:02d}:{secs:02d}"
 
+def test_chord_consonance(chroma_norm, chord_notes_list):
+    """Teste la consonance d'un accord en sommant les valeurs chroma normalisées de ses notes."""
+    indices = [NOTES_LIST.index(note) for note in chord_notes_list]
+    consonance_score = np.sum([chroma_norm[idx] for idx in indices]) / len(indices)  # Moyenne pour normalisation
+    return consonance_score
+
 def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     ext = file_name.split('.')[-1].lower()
     try:
@@ -427,6 +434,21 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     final_conf = int(final_conf * (0.7 + 0.3 * best_match))  # Ajuste conf
     final_key = best_key  # Switch si meilleur match
 
+    # --- AJOUT : Test de consonance sur tous les accords possibles ---
+    diatonic_chords = get_diatonic_chords(final_key)
+    consonance_scores = {}
+    for chord in diatonic_chords:
+        score = test_chord_consonance(chroma_norm, chord['notes_list'])
+        consonance_scores[chord['name']] = score
+
+    # Meilleur accord (celui avec le score le plus haut)
+    if consonance_scores:
+        best_chord_name = max(consonance_scores, key=consonance_scores.get)
+        best_chord_score = consonance_scores[best_chord_name] * 100  # Pour %
+    else:
+        best_chord_name = "None"
+        best_chord_score = 0
+
     # Génération accords pour affichage (sur final_key ajustée)
     diatonic_chords = get_diatonic_chords(final_key)
     target_diatonic_chords = get_diatonic_chords(target_key) if target_key else []
@@ -452,7 +474,9 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "diatonic_chords": diatonic_chords,
         "target_diatonic_chords": target_diatonic_chords,
         "validation_score": int(validation_score),
-        "key_alternatives": [k for k in candidates if k != final_key]
+        "key_alternatives": [k for k in candidates if k != final_key],
+        "best_chord": best_chord_name,  # Ajout du meilleur accord
+        "best_chord_consonance": int(best_chord_score)  # Score consonance
     }
 
     if TELEGRAM_TOKEN and CHAT_ID:
@@ -689,6 +713,9 @@ if uploaded_files:
                         st.subheader("Accords pour la tonalité cible (modulation)")
                         df_target = pd.DataFrame(target_chords)
                         st.table(df_target)
+                    
+                    # Affichage du meilleur accord
+                    st.markdown(f"**Meilleur accord consonant :** {data.get('best_chord', 'None')} (Score: {data.get('best_chord_consonance', 0)}%)")
                 
                 st.markdown("<hr style='border-color:#30363d; margin:40px 0 30px 0;'>", unsafe_allow_html=True)
 

@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 from scipy.signal import butter, lfilter
 from datetime import datetime
 from pydub import AudioSegment
-from scipy.cluster.hierarchy import fcluster
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 import logging
 import textwrap
@@ -455,7 +455,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         target_times = np.array([t["Temps"] for t in timeline if t["Note"] == target_key])
         if len(target_times) > 3:
             dist = pdist(target_times.reshape(-1,1), 'euclidean')
-            clust = fcluster(dist, t=5, criterion='distance')  # Clusters si <5s apart
+            Z = linkage(target_times.reshape(-1,1), method='single')
+            clust = fcluster(Z, t=5, criterion='distance')  # Clusters si <5s apart
             max_cluster_size = max(Counter(clust).values()) * 2  # Taille en secondes approx
             if max_cluster_size < 10:  # Seuil minimal pour vraie modulation
                 mod_detected = False  # Ignore si pas continu

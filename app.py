@@ -215,11 +215,6 @@ st.markdown("""
         border: 1px solid rgba(99, 102, 241, 0.3); box-shadow: 0 15px 45px rgba(0,0,0,0.6);
         margin-bottom: 20px;
     }
-    .chord-card { 
-        padding: 30px; border-radius: 30px; text-align: center; color: white; 
-        border: 1px solid rgba(99, 102, 241, 0.3); box-shadow: 0 15px 45px rgba(0,0,0,0.6);
-        margin-bottom: 20px;
-    }
     .file-header {
         background: #1f2937; color: #10b981; padding: 10px 20px; border-radius: 10px;
         font-family: 'JetBrains Mono', monospace; font-weight: bold; margin-bottom: 10px;
@@ -374,7 +369,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     if not votes:
         return None
 
-    most_common = votes.most_common(4)  # Top 4 pour candidats
+    most_common = votes.most_common(3)  # Top 3 pour candidats (plus que 2 pour comparaison)
 
     final_key = most_common[0][0]
     final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
@@ -417,7 +412,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     top_indices = np.argsort(chroma_norm)[-5:]  # Top 5 notes
     top_notes = set(NOTES_LIST[i] for i in top_indices)
 
-    # Candidats : Top 4 des votes
+    # Candidats : Top 3 des votes
     candidates = [mc[0] for mc in most_common]
 
     # Score match : Proportion de top notes dans diatoniques (pondéré 0.3 sur conf)
@@ -439,93 +434,74 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     final_conf = int(final_conf * (0.7 + 0.3 * best_match))  # Ajuste conf
     final_key = best_key  # Switch si meilleur match
 
-    # =============================================================================
-    #   RAFFINEMENT FINAL : choisir la tonalité qui contient l'accord le plus consonant
-    # =============================================================================
+    # --- AJOUT : Test de consonance sur tous les accords possibles ---
+    diatonic_chords = get_diatonic_chords(final_key)
+    consonance_scores = {}
+    for chord in diatonic_chords:
+        score = test_chord_consonance(chroma_norm, chord['notes_list'])
+        consonance_scores[chord['name']] = score
 
-    # On garde les 4 meilleurs candidats (pas que le winner actuel)
-    top_candidates = [mc[0] for mc in most_common]
-
-    # On va tester la consonance du meilleur accord pour chaque candidat
-    candidate_consonance = {}
-    candidate_best_chord = {}
-    candidate_best_chord_score = {}
-
-    for candidate_key in set(top_candidates + [final_key]):  # on inclut l'actuel au cas où
-        if not candidate_key or candidate_key == "Unknown":
-            continue
-            
-        chords = get_diatonic_chords(candidate_key)
-        if not chords:
-            continue
-            
-        consonance_scores = {}
-        for chord in chords:
-            score = test_chord_consonance(chroma_norm, chord['notes_list'])
-            consonance_scores[chord['name']] = score
-        
-        if consonance_scores:
-            best_chord_name = max(consonance_scores, key=consonance_scores.get)
-            best_score = consonance_scores[best_chord_name]
-            
-            candidate_consonance[candidate_key] = best_score
-            candidate_best_chord[candidate_key] = best_chord_name
-            candidate_best_chord_score[candidate_key] = best_score
-
-    # On choisit la tonalité avec le meilleur accord (consonance la plus élevée)
-    if candidate_consonance:
-        best_candidate_key = max(candidate_consonance, key=candidate_consonance.get)
-        best_consonance_score = candidate_consonance[best_candidate_key]
-        
-        # On ne change que si le gain est significatif (éviter flip inutile)
-        # ex: on exige au moins +5% de consonance en plus (seuil abaissé pour plus de sensibilité)
-        current_consonance = candidate_best_chord_score.get(final_key, 0)
-        
-        if best_consonance_score > current_consonance + 0.05:
-            st.info(f"Raffinage par consonance → changement de {final_key} → {best_candidate_key} "
-                    f"(meilleur accord {candidate_best_chord[best_candidate_key]} : "
-                    f"{best_consonance_score:.3f} vs {current_consonance:.3f})")
-            
-            final_key = best_candidate_key
-            # On met aussi à jour la confiance (optionnel mais cohérent)
-            final_conf = int(final_conf * 0.92 + 8)  # petite pénalité car on a changé
-            
-        # Dans tous les cas, on garde en mémoire le meilleur accord global
-        global_best_chord = candidate_best_chord[final_key]
-        global_best_chord_score = candidate_best_chord_score[final_key] * 100
-
+    # Meilleur accord (celui avec le score le plus haut)
+    if consonance_scores:
+        best_chord_name = max(consonance_scores, key=consonance_scores.get)
+        best_chord_score = consonance_scores[best_chord_name] * 100  # Pour %
     else:
-        global_best_chord = "None"
-        global_best_chord_score = 0
+        best_chord_name = "None"
+        best_chord_score = 0
 
-    # --- AJOUT : Calcul de l'accord le plus consonant absolu (indépendant de la tonalité) ---
+    # --- AJOUT : Meilleur accord global (tous les triads possibles, excluant root de main/target si applicable) ---
     all_chords = []
     for root in NOTES_LIST:
-        root_idx = NOTES_LIST.index(root)
-        # maj
-        third = NOTES_LIST[(root_idx + 4) % 12]
-        fifth = NOTES_LIST[(root_idx + 7) % 12]
-        all_chords.append({'name': f"{root}maj", 'notes_list': [root, third, fifth]})
-        # min
-        third = NOTES_LIST[(root_idx + 3) % 12]
-        fifth = NOTES_LIST[(root_idx + 7) % 12]
-        all_chords.append({'name': f"{root}min", 'notes_list': [root, third, fifth]})
-        # dim
-        third = NOTES_LIST[(root_idx + 3) % 12]
-        fifth = NOTES_LIST[(root_idx + 6) % 12]
-        all_chords.append({'name': f"{root}dim", 'notes_list': [root, third, fifth]})
+        # Major
+        third_maj = NOTES_LIST[(NOTES_LIST.index(root) + 4) % 12]
+        fifth_maj = NOTES_LIST[(NOTES_LIST.index(root) + 7) % 12]
+        all_chords.append({
+            'name': f"{root}maj",
+            'notes_list': [root, third_maj, fifth_maj]
+        })
+        # Minor
+        third_min = NOTES_LIST[(NOTES_LIST.index(root) + 3) % 12]
+        fifth_min = NOTES_LIST[(NOTES_LIST.index(root) + 7) % 12]
+        all_chords.append({
+            'name': f"{root}min",
+            'notes_list': [root, third_min, fifth_min]
+        })
+        # Dim
+        third_dim = NOTES_LIST[(NOTES_LIST.index(root) + 3) % 12]
+        fifth_dim = NOTES_LIST[(NOTES_LIST.index(root) + 6) % 12]
+        all_chords.append({
+            'name': f"{root}dim",
+            'notes_list': [root, third_dim, fifth_dim]
+        })
 
-    consonance_scores_abs = {}
+    overall_consonance_scores = {}
     for chord in all_chords:
         score = test_chord_consonance(chroma_norm, chord['notes_list'])
-        consonance_scores_abs[chord['name']] = score
+        overall_consonance_scores[chord['name']] = score
 
-    if consonance_scores_abs:
-        absolute_best_chord = max(consonance_scores_abs, key=consonance_scores_abs.get)
-        absolute_best_score = consonance_scores_abs[absolute_best_chord] * 100
-    else:
-        absolute_best_chord = "None"
-        absolute_best_score = 0
+    # Identifier les chords à exclure (root de main et target)
+    exclude_chords = set()
+    note, mode = final_key.split()
+    root_chord = f"{note}maj" if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else f"{note}min"
+    exclude_chords.add(root_chord)
+    if target_key:
+        t_note, t_mode = target_key.split()
+        target_root_chord = f"{t_note}maj" if 'major' in t_mode or t_mode in ['ionian', 'mixolydian', 'lydian'] else f"{t_note}min"
+        exclude_chords.add(target_root_chord)
+
+    # Trier et trouver le meilleur non exclu
+    sorted_chords = sorted(overall_consonance_scores.items(), key=lambda x: x[1], reverse=True)
+    best_global_chord = None
+    best_global_score = 0
+    for ch, sc in sorted_chords:
+        if ch not in exclude_chords:
+            best_global_chord = ch
+            best_global_score = sc * 100
+            break
+
+    if not best_global_chord:
+        best_global_chord = "None"
+        best_global_score = 0
 
     # Génération accords pour affichage (sur final_key ajustée)
     diatonic_chords = get_diatonic_chords(final_key)
@@ -553,10 +529,10 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "target_diatonic_chords": target_diatonic_chords,
         "validation_score": int(validation_score),
         "key_alternatives": [k for k in candidates if k != final_key],
-        "best_chord": global_best_chord,  # Meilleur accord dans la tonalité
-        "best_chord_consonance": int(global_best_chord_score),  # Score consonance dans la tonalité
-        "absolute_best_chord": absolute_best_chord,  # Accord absolu le plus consonant
-        "absolute_best_consonance": int(absolute_best_score)  # Score absolu
+        "best_chord": best_chord_name,  # Best diatonic
+        "best_chord_consonance": int(best_chord_score),
+        "best_global_chord": best_global_chord,  # Best global excluant roots
+        "best_global_consonance": int(best_global_score)
     }
 
     if TELEGRAM_TOKEN and CHAT_ID:
@@ -678,9 +654,9 @@ if uploaded_files:
             with results_container:
                 st.markdown(f"<div class='file-header'> {data['name']}</div>", unsafe_allow_html=True)
                 
-                col_key, col_chord = st.columns([3, 2])
-                
-                with col_key:
+                key_col, chord_col = st.columns(2)
+
+                with key_col:
                     color = "linear-gradient(135deg, #065f46, #064e3b)" if data['conf'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
 
                     mod_alert = ""
@@ -715,14 +691,14 @@ if uploaded_files:
                             {mod_alert}
                         </div>
                         """, unsafe_allow_html=True)
-                
-                with col_chord:
-                    chord_color = "linear-gradient(135deg, #065f46, #064e3b)" if data['absolute_best_consonance'] > 80 else "linear-gradient(135deg, #1e293b, #0f172a)"
+
+                with chord_col:
+                    color_chord = "linear-gradient(135deg, #4338ca, #3730a3)" if data['best_global_consonance'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
                     st.markdown(f"""
-                        <div class="chord-card" style="background:{chord_color};">
-                            <h2 style="font-size:3em; margin:8px 0; font-weight:900;">{data['absolute_best_chord'].upper()}</h2>
-                            <p style="font-size:1.3em; opacity:0.92;">
-                                Meilleur Accord <br> Consonance <b>{data['absolute_best_consonance']}%</b>
+                        <div class="report-card" style="background:{color_chord};">
+                            <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['best_global_chord'].upper()}</h1>
+                            <p style="font-size:1.5em; opacity:0.92;">
+                                MEILLEUR ACCORD  •  Consonance <b>{data['best_global_consonance']}%</b>
                             </p>
                         </div>
                         """, unsafe_allow_html=True)

@@ -178,11 +178,14 @@ def get_mode_intervals(mode):
 
 def get_diatonic_chords(key):
     """Génère les accords diatoniques pour une tonalité/mode, comme dans Piano Companion."""
-    if not key or key == "Unknown":
+    if not key or key in ["Unknown", "Atonal"]:
         return []
     
-    note, mode = key.split()
-    root_idx = NOTES_LIST.index(note)
+    try:
+        note, mode = key.split()
+        root_idx = NOTES_LIST.index(note)
+    except ValueError:
+        return []
     
     scale_intervals = get_mode_intervals(mode)
     if not scale_intervals:
@@ -369,9 +372,12 @@ def seconds_to_mmss(seconds):
 
 def test_chord_consonance(chroma_norm, chord_notes_list):
     """Teste la consonance d'un accord en sommant les valeurs chroma normalisées de ses notes."""
-    indices = [NOTES_LIST.index(note) for note in chord_notes_list]
-    consonance_score = np.sum([chroma_norm[idx] for idx in indices]) / len(indices)  # Moyenne pour normalisation
-    return consonance_score
+    try:
+        indices = [NOTES_LIST.index(note) for note in chord_notes_list]
+        consonance_score = np.sum([chroma_norm[idx] for idx in indices]) / len(indices)  # Moyenne pour normalisation
+        return consonance_score
+    except ValueError:
+        return 0
 
 def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     ext = file_name.split('.')[-1].lower()
@@ -415,6 +421,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         c_raw_strict = librosa.feature.chroma_cqt(y=seg_strict, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)  # Augmente résolution
         c_raw_soft = librosa.feature.chroma_cqt(y=seg_soft, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)
         c_avg = 0.7 * np.mean(c_raw_strict, axis=1) + 0.3 * np.mean(c_raw_soft, axis=1)
+        c_avg = np.sum(c_avg.reshape(12, 3), axis=1)  # Fold to 12 pitch classes
         b_seg = get_bass_priority(y[idx_start:idx_end], sr)
         res = solve_key_sniper(c_avg, b_seg)
         
@@ -429,7 +436,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
 
     if not votes:
-        return None
+        return {"key": "Atonal", "conf": 0, "tempo": 0, "tuning": 440, "modulation": False, "name": file_name, "diatonic_chords": [], "target_diatonic_chords": [], "validation_score": 0, "key_alternatives": [], "best_chord": "None", "best_chord_consonance": 0, "best_global_chord": "None", "best_global_consonance": 0, "camelot": "??", "target_camelot": None, "mod_target_percentage": 0, "mod_ends_in_target": False, "modulation_time_str": None, "chroma": [0]*12, "timeline": []}
 
     most_common = votes.most_common(3)  # Top 3 pour candidats (plus que 2 pour comparaison)
 
@@ -473,7 +480,9 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
                 ends_in_target = (last_key == target_key)
 
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    chroma_avg = np.mean(librosa.feature.chroma_cqt(y=y_filt_strict, sr=sr, tuning=tuning), axis=1)  # Utilise strict pour global
+    chroma_raw = librosa.feature.chroma_cqt(y=y_filt_strict, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)
+    chroma_avg = np.mean(chroma_raw, axis=1)
+    chroma_avg = np.sum(chroma_avg.reshape(12, 3), axis=1)  # Fold to 12
 
     # --- AJOUT : Comparaison avec top 5 notes dominantes pour décision finale ---
     chroma_norm = chroma_avg / np.max(chroma_avg)
@@ -489,11 +498,14 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         diat_notes = get_diatonic_notes(key)
         match_score = sum(top_notes_weights.get(n, 0) for n in diat_notes) / sum(top_notes_weights.values() + 1e-6)
         # Bonus si tierce match mode
-        note, mode = key.split()
-        root_idx = NOTES_LIST.index(note)
-        third_idx = (root_idx + 4 if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else root_idx + 3) % 12
-        if NOTES_LIST[third_idx] in top_notes_weights:
-            match_score += 0.2  # Bonus tierce
+        try:
+            note, mode = key.split()
+            root_idx = NOTES_LIST.index(note)
+            third_idx = (root_idx + 4 if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else root_idx + 3) % 12
+            if NOTES_LIST[third_idx] in top_notes_weights:
+                match_score += 0.2  # Bonus tierce
+        except ValueError:
+            match_score = 0
         matches[key] = match_score
 
     # Ajuste conf avec match (pondéré)
@@ -549,13 +561,19 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
 
     # Identifier les chords à exclure (root de main et target)
     exclude_chords = set()
-    note, mode = final_key.split()
-    root_chord = f"{note}maj" if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else f"{note}min"
-    exclude_chords.add(root_chord)
+    try:
+        note, mode = final_key.split()
+        root_chord = f"{note}maj" if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else f"{note}min"
+        exclude_chords.add(root_chord)
+    except ValueError:
+        pass
     if target_key:
-        t_note, t_mode = target_key.split()
-        target_root_chord = f"{t_note}maj" if 'major' in t_mode or t_mode in ['ionian', 'mixolydian', 'lydian'] else f"{t_note}min"
-        exclude_chords.add(target_root_chord)
+        try:
+            t_note, t_mode = target_key.split()
+            target_root_chord = f"{t_note}maj" if 'major' in t_mode or t_mode in ['ionian', 'mixolydian', 'lydian'] else f"{t_note}min"
+            exclude_chords.add(target_root_chord)
+        except ValueError:
+            pass
 
     # Trier et trouver le meilleur non exclu
     sorted_chords = sorted(overall_consonance_scores.items(), key=lambda x: x[1], reverse=True)
@@ -663,12 +681,16 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     return res_obj
 
 def get_chord_js(btn_id, key_str):
-    note, mode = key_str.split()
+    try:
+        note, mode = key_str.split()
+    except ValueError:
+        return ""
+    intervals_str = 'minor' if mode in ['minor', 'aeolian', 'dorian', 'phrygian', 'locrian'] else 'major'
     return f"""
     document.getElementById('{btn_id}').onclick = function() {{
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const freqs = {{'C':261.6,'C#':277.2,'D':293.7,'D#':311.1,'E':329.6,'F':349.2,'F#':370.0,'G':392.0,'G#':415.3,'A':440.0,'A#':466.2,'B':493.9}};
-        const intervals = '{mode}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
+        const intervals = '{intervals_str}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
         intervals.forEach(i => {{
             const o = ctx.createOscillator(); const g = ctx.createGain();
             o.type = 'triangle'; 
@@ -799,12 +821,14 @@ if uploaded_files:
                     st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2.2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
                 with m3:
                     btn_id = f"play_{i}_{hash(data['name'])}"
-                    components.html(f"""
-                        <button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #4F46E5, #7C3AED); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold; font-size:1.1em;">
-                            TESTER L'ACCORD
-                        </button>
-                        <script>{get_chord_js(btn_id, data['key'])}</script>
-                    """, height=110)
+                    js = get_chord_js(btn_id, data['key'])
+                    if js:
+                        components.html(f"""
+                            <button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #4F46E5, #7C3AED); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold; font-size:1.1em;">
+                                TESTER L'ACCORD
+                            </button>
+                            <script>{js}</script>
+                        """, height=110)
 
                 c1, c2 = st.columns([2, 1])
                 with c1: 

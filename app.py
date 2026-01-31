@@ -215,6 +215,11 @@ st.markdown("""
         border: 1px solid rgba(99, 102, 241, 0.3); box-shadow: 0 15px 45px rgba(0,0,0,0.6);
         margin-bottom: 20px;
     }
+    .chord-card { 
+        padding: 30px; border-radius: 30px; text-align: center; color: white; 
+        border: 1px solid rgba(99, 102, 241, 0.3); box-shadow: 0 15px 45px rgba(0,0,0,0.6);
+        margin-bottom: 20px;
+    }
     .file-header {
         background: #1f2937; color: #10b981; padding: 10px 20px; border-radius: 10px;
         font-family: 'JetBrains Mono', monospace; font-weight: bold; margin-bottom: 10px;
@@ -493,6 +498,35 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         global_best_chord = "None"
         global_best_chord_score = 0
 
+    # --- AJOUT : Calcul de l'accord le plus consonant absolu (indépendant de la tonalité) ---
+    all_chords = []
+    for root in NOTES_LIST:
+        root_idx = NOTES_LIST.index(root)
+        # maj
+        third = NOTES_LIST[(root_idx + 4) % 12]
+        fifth = NOTES_LIST[(root_idx + 7) % 12]
+        all_chords.append({'name': f"{root}maj", 'notes_list': [root, third, fifth]})
+        # min
+        third = NOTES_LIST[(root_idx + 3) % 12]
+        fifth = NOTES_LIST[(root_idx + 7) % 12]
+        all_chords.append({'name': f"{root}min", 'notes_list': [root, third, fifth]})
+        # dim
+        third = NOTES_LIST[(root_idx + 3) % 12]
+        fifth = NOTES_LIST[(root_idx + 6) % 12]
+        all_chords.append({'name': f"{root}dim", 'notes_list': [root, third, fifth]})
+
+    consonance_scores_abs = {}
+    for chord in all_chords:
+        score = test_chord_consonance(chroma_norm, chord['notes_list'])
+        consonance_scores_abs[chord['name']] = score
+
+    if consonance_scores_abs:
+        absolute_best_chord = max(consonance_scores_abs, key=consonance_scores_abs.get)
+        absolute_best_score = consonance_scores_abs[absolute_best_chord] * 100
+    else:
+        absolute_best_chord = "None"
+        absolute_best_score = 0
+
     # Génération accords pour affichage (sur final_key ajustée)
     diatonic_chords = get_diatonic_chords(final_key)
     target_diatonic_chords = get_diatonic_chords(target_key) if target_key else []
@@ -519,8 +553,10 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "target_diatonic_chords": target_diatonic_chords,
         "validation_score": int(validation_score),
         "key_alternatives": [k for k in candidates if k != final_key],
-        "best_chord": global_best_chord,  # Ajout du meilleur accord
-        "best_chord_consonance": int(global_best_chord_score)  # Score consonance
+        "best_chord": global_best_chord,  # Meilleur accord dans la tonalité
+        "best_chord_consonance": int(global_best_chord_score),  # Score consonance dans la tonalité
+        "absolute_best_chord": absolute_best_chord,  # Accord absolu le plus consonant
+        "absolute_best_consonance": int(absolute_best_score)  # Score absolu
     }
 
     if TELEGRAM_TOKEN and CHAT_ID:
@@ -642,40 +678,54 @@ if uploaded_files:
             with results_container:
                 st.markdown(f"<div class='file-header'> {data['name']}</div>", unsafe_allow_html=True)
                 
-                color = "linear-gradient(135deg, #065f46, #064e3b)" if data['conf'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
+                col_key, col_chord = st.columns([3, 2])
+                
+                with col_key:
+                    color = "linear-gradient(135deg, #065f46, #064e3b)" if data['conf'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
 
-                mod_alert = ""
-                if data.get('modulation'):
-                    perc = data.get('mod_target_percentage', 0)
-                    ends_in_target = data.get('mod_ends_in_target', False)
-                    time_str = data.get('modulation_time_str', '??:??')
-                    
-                    if perc < 25:
-                        nature = "passage court / ponctuel"
-                    elif perc < 50:
-                        nature = "section significative"
-                    else:
-                        nature = "dominante sur une grande partie"
+                    mod_alert = ""
+                    if data.get('modulation'):
+                        perc = data.get('mod_target_percentage', 0)
+                        ends_in_target = data.get('mod_ends_in_target', False)
+                        time_str = data.get('modulation_time_str', '??:??')
+                        
+                        if perc < 25:
+                            nature = "passage court / ponctuel"
+                        elif perc < 50:
+                            nature = "section significative"
+                        else:
+                            nature = "dominante sur une grande partie"
 
-                    end_txt = " → **fin en " + data['target_key'].upper() + "**" if ends_in_target else ""
-                    
-                    mod_alert = f"""
-                        <div class="modulation-alert">
-                            MODULATION → {data['target_key'].upper()} ({data['target_camelot']})<br>
-                            <span class="detail">≈ {time_str} – {perc}% du morceau{end_txt}</span><br>
-                            <span class="nature">({nature})</span>
+                        end_txt = " → **fin en " + data['target_key'].upper() + "**" if ends_in_target else ""
+                        
+                        mod_alert = f"""
+                            <div class="modulation-alert">
+                                MODULATION → {data['target_key'].upper()} ({data['target_camelot']})<br>
+                                <span class="detail">≈ {time_str} – {perc}% du morceau{end_txt}</span><br>
+                                <span class="nature">({nature})</span>
+                            </div>
+                        """.strip()
+
+                    st.markdown(f"""
+                        <div class="report-card" style="background:{color};">
+                            <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['key'].upper()}</h1>
+                            <p style="font-size:1.5em; opacity:0.92;">
+                                CAMELOT <b>{data['camelot']}</b>  •  Confiance <b>{data['conf']}%</b>
+                            </p>
+                            {mod_alert}
                         </div>
-                    """.strip()
-
-                st.markdown(f"""
-                    <div class="report-card" style="background:{color};">
-                        <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['key'].upper()}</h1>
-                        <p style="font-size:1.5em; opacity:0.92;">
-                            CAMELOT <b>{data['camelot']}</b>  •  Confiance <b>{data['conf']}%</b>
-                        </p>
-                        {mod_alert}
-                    </div>
-                    """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
+                
+                with col_chord:
+                    chord_color = "linear-gradient(135deg, #065f46, #064e3b)" if data['absolute_best_consonance'] > 80 else "linear-gradient(135deg, #1e293b, #0f172a)"
+                    st.markdown(f"""
+                        <div class="chord-card" style="background:{chord_color};">
+                            <h2 style="font-size:3em; margin:8px 0; font-weight:900;">{data['absolute_best_chord'].upper()}</h2>
+                            <p style="font-size:1.3em; opacity:0.92;">
+                                Meilleur Accord <br> Consonance <b>{data['absolute_best_consonance']}%</b>
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
                 
                 advice = get_mixing_advice(data)
                 if advice:

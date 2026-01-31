@@ -14,6 +14,9 @@ import streamlit.components.v1 as components
 from scipy.signal import butter, lfilter
 from datetime import datetime
 from pydub import AudioSegment
+from scipy.cluster.hierarchy import fcluster
+from scipy.spatial.distance import pdist
+import logging
 
 # --- FORCE FFMPEG PATH (WINDOWS FIX) ---
 if os.path.exists(r'C:\ffmpeg\bin'):
@@ -36,23 +39,50 @@ CAMELOT_MAP = {
     'F# major': '2B', 'G major': '9B', 'G# major': '4B', 'A major': '11B', 'A# major': '6B', 'B major': '1B',
     'C minor': '5A', 'C# minor': '12A', 'D minor': '7A', 'D# minor': '2A', 'E minor': '9A', 'F minor': '4A',
     'F# minor': '11A', 'G minor': '6A', 'G# minor': '1A', 'A minor': '8A', 'A# minor': '3A', 'B minor': '10A'
-    # Note: Pour modes étendus, pas de Camelot standard ; on peut mapper à maj/min équivalents si besoin
+    # Note: Pour modes étendus, mapper approximativement (e.g., mixolydian comme major)
 }
+
+# Ajout de mappings approximatifs pour modes
+for mode in MODES:
+    if mode not in ['major', 'minor']:
+        for note in NOTES_LIST:
+            base_mode = 'major' if mode in ['mixolydian', 'lydian', 'ionian'] else 'minor'
+            CAMELOT_MAP[f"{note} {mode}"] = CAMELOT_MAP.get(f"{note} {base_mode}", "??") + " (approx)"
 
 PROFILES = {
     "krumhansl": {
         "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-        "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+        "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+        "mixolydian": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.00],  # Pénalise 7e majeure, boost b7
+        "dorian": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 4.75, 2.54, 3.98, 2.69, 3.34, 3.17],  # Boost 6 majeure vs minor
+        "phrygian": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 2.00],  # Pénalise 2 majeure
+        "lydian": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 5.19, 2.52, 2.39, 3.66, 2.29, 2.88],  # Boost #4
+        "locrian": [6.33, 2.68, 3.52, 5.38, 2.60, 2.54, 4.75, 3.53, 3.98, 2.69, 3.34, 3.17],  # Pénalise 5 parfaite
+        "aeolian": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],  # Identique à minor
+        "ionian": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]   # Identique à major
     },
     "temperley": {
         "major": [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0],
-        "minor": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0]
+        "minor": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0],
+        "mixolydian": [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 3.0],  # Adapté pour b7
+        "dorian": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 4.5, 2.0, 3.5, 2.0, 1.5, 4.0],  # Boost 6
+        "phrygian": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 3.0],  # Adapté
+        "lydian": [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 4.5, 2.0, 2.0, 3.5, 1.5, 4.0],  # Boost #4
+        "locrian": [5.0, 2.0, 3.5, 4.5, 2.0, 2.0, 4.5, 4.0, 3.5, 2.0, 1.5, 4.0],  # Adapté
+        "aeolian": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0],  # Identique à minor
+        "ionian": [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0]   # Identique à major
     },
     "bellman": {
         "major": [16.8, 0.86, 12.95, 1.41, 13.49, 11.93, 1.25, 16.74, 1.56, 12.81, 1.89, 12.44],
-        "minor": [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 1.38, 17.2, 13.62, 1.27, 12.79, 2.4]
+        "minor": [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 1.38, 17.2, 13.62, 1.27, 12.79, 2.4],
+        "mixolydian": [16.8, 0.86, 12.95, 1.41, 13.49, 11.93, 1.25, 16.74, 1.56, 12.81, 1.89, 10.0],  # Adapté
+        "dorian": [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 17.2, 1.38, 13.62, 1.27, 12.79, 2.4],  # Boost 6
+        "phrygian": [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 1.38, 17.2, 13.62, 1.27, 12.79, 1.0],  # Adapté
+        "lydian": [16.8, 0.86, 12.95, 1.41, 13.49, 11.93, 16.74, 1.25, 1.56, 12.81, 1.89, 12.44],  # Boost #4
+        "locrian": [18.16, 0.69, 12.99, 13.34, 1.07, 1.38, 17.2, 11.15, 13.62, 1.27, 12.79, 2.4],  # Adapté
+        "aeolian": [18.16, 0.69, 12.99, 13.34, 1.07, 11.15, 1.38, 17.2, 13.62, 1.27, 12.79, 2.4],  # Identique à minor
+        "ionian": [16.8, 0.86, 12.95, 1.41, 13.49, 11.93, 1.25, 16.74, 1.56, 12.81, 1.89, 12.44]   # Identique à major
     }
-    # Note: Pour modes étendus, pas de profils standards ; on peut étendre si besoin, mais pour l'instant fallback à maj/min
 }
 
 # --- FONCTIONS UTILITAIRES POUR LES CONSEILS MIX ---
@@ -235,13 +265,16 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- MOTEURS DE CALCUL ---
-def apply_sniper_filters(y, sr):
-    y_harm = librosa.effects.harmonic(y, margin=4.0)
-    nyq = 0.5 * sr
-    low = 80 / nyq
-    high = 5000 / nyq
-    b, a = butter(4, [low, high], btype='band')
-    return lfilter(b, a, y_harm)
+def apply_sniper_filters(y, sr, strict=True):
+    if strict:
+        y_harm = librosa.effects.harmonic(y, margin=4.0)
+        nyq = 0.5 * sr
+        low = 80 / nyq
+        high = 5000 / nyq
+        b, a = butter(4, [low, high], btype='band')
+        return lfilter(b, a, y_harm)
+    else:
+        return y  # Version non filtrée pour fusion
 
 def get_bass_priority(y, sr):
     nyq = 0.5 * sr
@@ -261,32 +294,59 @@ def solve_key_sniper(chroma_vector, bass_vector):
     
     for p_name, p_data in PROFILES.items():
         for mode in MODES:
-            profile_mode = "major" if mode in ['major', 'ionian', 'mixolydian', 'lydian'] else "minor"  # Fallback à profils existants
             for i in range(12):
-                score = np.corrcoef(cv, np.roll(p_data[profile_mode], i))[0, 1]
-                
-                dom_idx = (i + 7) % 12
-                leading_tone = (i + 11) % 12
-                
-                if 'minor' in mode or mode in ['aeolian', 'dorian', 'phrygian', 'locrian']:
-                    if cv[leading_tone] > 0.30:
-                        score *= 1.35
-                    if cv[dom_idx] > 0.45:
-                        score *= 1.15
+                if mode not in p_data:
+                    base_mode = "major" if mode in ['major', 'ionian', 'mixolydian', 'lydian'] else "minor"
+                    profile = p_data[base_mode]
                 else:
-                    if cv[i] > 0.7 and cv[dom_idx] > 0.6:
-                        score *= 1.1
+                    profile = p_data[mode]
                 
-                if bv[i] > 0.6:
-                    score += (bv[i] * 0.25)
+                score = np.corrcoef(cv, np.roll(profile, i))[0, 1]
                 
-                third_idx = (i + 4) % 12 if 'major' in mode else (i + 3) % 12
-                if cv[third_idx] > 0.5:
-                    score += 0.15
+                # Seuils adaptatifs basés sur variance chroma (plus robuste)
+                var_cv = np.var(cv)
+                leading_threshold = 0.25 + var_cv * 0.1  # Exemple adaptatif
+                
+                # Bonus par mode spécifique
+                dom_idx = (i + 7) % 12  # V (quinte)
+                third_idx = (i + 4 if mode in ['major', 'ionian', 'mixolydian', 'lydian'] else i + 3) % 12
+                sixth_idx = (i + 9) % 12  # Pour dorian/minor diff
+                
+                if mode in ['minor', 'aeolian', 'phrygian', 'locrian']:
+                    leading_tone = (i + 11) % 12
+                    if cv[leading_tone] > leading_threshold:
+                        score *= 1.25  # Réduit pour éviter surboost
+                elif mode == 'dorian':
+                    if cv[sixth_idx] > 0.40:  # Boost 6 majeure
+                        score *= 1.15
+                elif mode == 'mixolydian':
+                    b7_idx = (i + 10) % 12
+                    if cv[b7_idx] > 0.35 and cv[(i + 11) % 12] < 0.20:  # Boost b7, pénalise 7 majeure
+                        score *= 1.20
+                # Ajoute pour autres modes (lydian: boost #4 = i+6, etc.)
+                elif mode == 'lydian':
+                    sharp4_idx = (i + 6) % 12
+                    if cv[sharp4_idx] > 0.40:
+                        score *= 1.15
+                elif mode == 'phrygian':
+                    b2_idx = (i + 1) % 12
+                    if cv[b2_idx] > 0.35:
+                        score *= 1.15
+                elif mode == 'locrian':
+                    dim5_idx = (i + 6) % 12
+                    if cv[dim5_idx] < 0.20:  # Pénalise si 5 dim faible
+                        score *= 0.85
+                
+                # Bonus généraux (bass, third, fifth) inchangés, mais ajoute seuil adaptatif
+                if bv[i] > max(0.5, 1 - var_cv):
+                    score += (bv[i] * 0.20)
+                
+                if cv[third_idx] > max(0.4, 1 - var_cv):
+                    score += 0.12
                 
                 fifth_idx = (i + 7) % 12
-                if cv[fifth_idx] > 0.5:
-                    score += 0.10
+                if cv[fifth_idx] > max(0.4, 1 - var_cv):
+                    score += 0.08
                 
                 key_name = f"{NOTES_LIST[i]} {mode}"
                 key_scores[key_name].append(score)
@@ -335,7 +395,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
 
     duration = librosa.get_duration(y=y, sr=sr)
     tuning = librosa.estimate_tuning(y=y, sr=sr)
-    y_filt = apply_sniper_filters(y, sr)
+    y_filt_strict = apply_sniper_filters(y, sr, strict=True)
+    y_filt_soft = apply_sniper_filters(y, sr, strict=False)
 
     step, timeline, votes = 6, [], Counter()
     segments = list(range(0, max(1, int(duration) - step), 2))
@@ -347,17 +408,23 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
             _progress_callback(prog_internal, f"Scan : {start}s / {int(duration)}s")
 
         idx_start, idx_end = int(start * sr), int((start + step) * sr)
-        seg = y_filt[idx_start:idx_end]
-        if len(seg) < 1000 or np.max(np.abs(seg)) < 0.01: continue
+        seg_strict = y_filt_strict[idx_start:idx_end]
+        seg_soft = y_filt_soft[idx_start:idx_end]
+        if len(seg_strict) < 1000 or np.max(np.abs(seg_strict)) < 0.01: continue
         
-        c_raw = librosa.feature.chroma_cqt(y=seg, sr=sr, tuning=tuning, n_chroma=24, bins_per_octave=24)
-        c_avg = np.mean((c_raw[::2, :] + c_raw[1::2, :]) / 2, axis=1)
+        c_raw_strict = librosa.feature.chroma_cqt(y=seg_strict, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)  # Augmente résolution
+        c_raw_soft = librosa.feature.chroma_cqt(y=seg_soft, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)
+        c_avg = 0.7 * np.mean(c_raw_strict, axis=1) + 0.3 * np.mean(c_raw_soft, axis=1)
         b_seg = get_bass_priority(y[idx_start:idx_end], sr)
         res = solve_key_sniper(c_avg, b_seg)
         
+        if res['score'] < 0.7:  # Atonal handling
+            res['key'] = "Atonal"
+            res['score'] = 0
+        
         if res['score'] < 0.9: continue
         
-        weight = 2.0 if (start < 10 or start > (duration - 15)) else 1.0
+        weight = 1.5 if (start < 15 or start > (duration - 20)) else 1.0  # Réduit et étend fenêtre
         votes[res['key']] += int(res['score'] * 100 * weight)
         timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
 
@@ -377,35 +444,41 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     ends_in_target = False
 
     if mod_detected and target_key:
-        candidates = [t["Temps"] for t in timeline if t["Note"] == target_key and t["Conf"] >= 0.84]
-        if candidates:
-            modulation_time = min(candidates)
-        else:
-            target_times = [t["Temps"] for t in timeline if t["Note"] == target_key]
-            if target_times:
+        target_times = np.array([t["Temps"] for t in timeline if t["Note"] == target_key])
+        if len(target_times) > 3:
+            dist = pdist(target_times.reshape(-1,1), 'euclidean')
+            clust = fcluster(dist, t=5, criterion='distance')  # Clusters si <5s apart
+            max_cluster_size = max(Counter(clust).values()) * 2  # Taille en secondes approx
+            if max_cluster_size < 10:  # Seuil minimal pour vraie modulation
+                mod_detected = False  # Ignore si pas continu
+        if mod_detected:
+            candidates = [t["Temps"] for t in timeline if t["Note"] == target_key and t["Conf"] >= 0.84]
+            if candidates:
+                modulation_time = min(candidates)
+            else:
                 sorted_times = sorted(target_times)
                 modulation_time = sorted_times[max(0, len(sorted_times) // 3)]
 
-        total_valid = len(timeline)
-        if total_valid > 0:
-            target_count = sum(1 for t in timeline if t["Note"] == target_key)
-            final_count = sum(1 for t in timeline if t["Note"] == final_key)
-            target_percentage = (target_count / total_valid) * 100
+            total_valid = len(timeline)
+            if total_valid > 0:
+                target_count = sum(1 for t in timeline if t["Note"] == target_key)
+                final_count = sum(1 for t in timeline if t["Note"] == final_key)
+                target_percentage = (target_count / total_valid) * 100
 
-        if timeline:
-            last_n = max(5, len(timeline) // 10)
-            last_segments = timeline[-last_n:]
-            last_counter = Counter(s["Note"] for s in last_segments)
-            last_key = last_counter.most_common(1)[0][0]
-            ends_in_target = (last_key == target_key)
+            if timeline:
+                last_n = max(5, len(timeline) // 10)
+                last_segments = timeline[-last_n:]
+                last_counter = Counter(s["Note"] for s in last_segments)
+                last_key = last_counter.most_common(1)[0][0]
+                ends_in_target = (last_key == target_key)
 
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    chroma_avg = np.mean(librosa.feature.chroma_cqt(y=y_filt, sr=sr, tuning=tuning), axis=1)
+    chroma_avg = np.mean(librosa.feature.chroma_cqt(y=y_filt_strict, sr=sr, tuning=tuning), axis=1)  # Utilise strict pour global
 
     # --- AJOUT : Comparaison avec top 5 notes dominantes pour décision finale ---
     chroma_norm = chroma_avg / np.max(chroma_avg)
     top_indices = np.argsort(chroma_norm)[-5:]  # Top 5 notes
-    top_notes = set(NOTES_LIST[i] for i in top_indices)
+    top_notes_weights = {NOTES_LIST[i]: chroma_norm[i] for i in top_indices if chroma_norm[i] > 0.1 * np.max(chroma_norm)}
 
     # Candidats : Top 3 des votes
     candidates = [mc[0] for mc in most_common]
@@ -414,14 +487,14 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     matches = {}
     for key in candidates:
         diat_notes = get_diatonic_notes(key)
-        match_count = len(top_notes.intersection(diat_notes)) / 5
+        match_score = sum(top_notes_weights.get(n, 0) for n in diat_notes) / sum(top_notes_weights.values() + 1e-6)
         # Bonus si tierce match mode
         note, mode = key.split()
         root_idx = NOTES_LIST.index(note)
         third_idx = (root_idx + 4 if 'major' in mode or mode in ['ionian', 'mixolydian', 'lydian'] else root_idx + 3) % 12
-        if NOTES_LIST[third_idx] in top_notes:
-            match_count += 0.2  # Bonus tierce
-        matches[key] = match_count
+        if NOTES_LIST[third_idx] in top_notes_weights:
+            match_score += 0.2  # Bonus tierce
+        matches[key] = match_score
 
     # Ajuste conf avec match (pondéré)
     best_key = max(matches, key=matches.get)
@@ -507,7 +580,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
 
     res_obj = {
         "key": final_key,
-        "camelot": CAMELOT_MAP.get(final_key.split()[0] + ' ' + ('major' if 'major' in final_key else 'minor'), "??"),  # Mapper modes à maj/min pour Camelot
+        "camelot": CAMELOT_MAP.get(final_key, "??"),  # Utilise le mapping étendu
         "conf": min(final_conf, 99),
         "tempo": int(float(tempo)),
         "tuning": round(440 * (2**(tuning/12)), 1),
@@ -515,7 +588,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "chroma": chroma_avg.tolist(),
         "modulation": mod_detected,
         "target_key": target_key,
-        "target_camelot": CAMELOT_MAP.get(target_key.split()[0] + ' ' + ('major' if 'major' in target_key else 'minor'), "??") if target_key else None,
+        "target_camelot": CAMELOT_MAP.get(target_key, "??") if target_key else None,
         "modulation_time_str": seconds_to_mmss(modulation_time) if mod_detected else None,
         "mod_target_percentage": round(target_percentage, 1) if mod_detected else 0,
         "mod_ends_in_target": ends_in_target if mod_detected else False,
@@ -585,7 +658,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         except Exception:
             pass
 
-    del y, y_filt
+    del y, y_filt_strict, y_filt_soft
     gc.collect()
     return res_obj
 

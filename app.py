@@ -864,13 +864,17 @@ if uploaded_files:
 
                 c1, c2 = st.columns([2, 1])
                 with c1: 
-                    fig_tl = px.line(
-                        pd.DataFrame(data['timeline']), 
-                        x="Temps", y="Note", 
-                        markers=True, 
-                        template="plotly_dark", 
-                        category_orders={"Note": NOTES_ORDER}
-                    )
+                    df_timeline = pd.DataFrame(data['timeline'])
+                    if not df_timeline.empty:
+                        fig_tl = px.line(
+                            df_timeline, 
+                            x="Temps", y="Note", 
+                            markers=True, 
+                            template="plotly_dark", 
+                            category_orders={"Note": NOTES_ORDER}
+                        )
+                    else:
+                        fig_tl = go.Figure()
                     fig_tl.update_layout(height=320, margin=dict(l=0,r=0,t=20,b=0))
                     st.plotly_chart(fig_tl, use_container_width=True, key=f"tl_{i}_{hash(f.name)}")
                 

@@ -485,7 +485,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     chroma_avg = np.sum(chroma_avg.reshape(12, 3), axis=1)  # Fold to 12
 
     # --- AJOUT : Comparaison avec top 5 notes dominantes pour décision finale ---
-    chroma_norm = chroma_avg / np.max(chroma_avg)
+    chroma_norm = chroma_avg / np.max(chroma_avg + 1e-6)  # Avoid div by zero
     top_indices = np.argsort(chroma_norm)[-5:]  # Top 5 notes
     top_notes_weights = {NOTES_LIST[i]: chroma_norm[i] for i in top_indices if chroma_norm[i] > 0.1 * np.max(chroma_norm)}
 
@@ -496,7 +496,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     matches = {}
     for key in candidates:
         diat_notes = get_diatonic_notes(key)
-        match_score = sum(top_notes_weights.get(n, 0) for n in diat_notes) / sum(top_notes_weights.values() + 1e-6)
+        match_score = sum(top_notes_weights.get(n, 0) for n in diat_notes) / (sum(top_notes_weights.values()) + 1e-6)
         # Bonus si tierce match mode
         try:
             note, mode = key.split()

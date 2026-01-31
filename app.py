@@ -434,20 +434,65 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     final_conf = int(final_conf * (0.7 + 0.3 * best_match))  # Ajuste conf
     final_key = best_key  # Switch si meilleur match
 
-    # --- AJOUT : Test de consonance sur tous les accords possibles ---
-    diatonic_chords = get_diatonic_chords(final_key)
-    consonance_scores = {}
-    for chord in diatonic_chords:
-        score = test_chord_consonance(chroma_norm, chord['notes_list'])
-        consonance_scores[chord['name']] = score
+    # =============================================================================
+    #   RAFFINEMENT FINAL : choisir la tonalité qui contient l'accord le plus consonant
+    # =============================================================================
 
-    # Meilleur accord (celui avec le score le plus haut)
-    if consonance_scores:
-        best_chord_name = max(consonance_scores, key=consonance_scores.get)
-        best_chord_score = consonance_scores[best_chord_name] * 100  # Pour %
+    # On garde les 3–4 meilleurs candidats (pas que le winner actuel)
+    most_common = votes.most_common(4)  # ex: top 4 des votes
+    top_candidates = [mc[0] for mc in most_common]
+
+    # On va tester la consonance du meilleur accord pour chaque candidat
+    candidate_consonance = {}
+    candidate_best_chord = {}
+    candidate_best_chord_score = {}
+
+    for candidate_key in set(top_candidates + [final_key]):  # on inclut l'actuel au cas où
+        if not candidate_key or candidate_key == "Unknown":
+            continue
+            
+        chords = get_diatonic_chords(candidate_key)
+        if not chords:
+            continue
+            
+        consonance_scores = {}
+        for chord in chords:
+            score = test_chord_consonance(chroma_norm, chord['notes_list'])
+            consonance_scores[chord['name']] = score
+        
+        if consonance_scores:
+            best_chord_name = max(consonance_scores, key=consonance_scores.get)
+            best_score = consonance_scores[best_chord_name]
+            
+            candidate_consonance[candidate_key] = best_score
+            candidate_best_chord[candidate_key] = best_chord_name
+            candidate_best_chord_score[candidate_key] = best_score
+
+    # On choisit la tonalité avec le meilleur accord (consonance la plus élevée)
+    if candidate_consonance:
+        best_candidate_key = max(candidate_consonance, key=candidate_consonance.get)
+        best_consonance_score = candidate_consonance[best_candidate_key]
+        
+        # On ne change que si le gain est significatif (éviter flip inutile)
+        # ex: on exige au moins +8–12% de consonance en plus
+        current_consonance = candidate_best_chord_score.get(final_key, 0)
+        
+        if best_consonance_score > current_consonance + 0.08:
+            st.info(f"Raffinage par consonance → changement de {final_key} → {best_candidate_key} "
+                    f"(meilleur accord {candidate_best_chord[best_candidate_key]} : "
+                    f"{best_consonance_score:.3f} vs {current_consonance:.3f})")
+            
+            final_key = best_candidate_key
+            # On met aussi à jour la confiance (optionnel mais cohérent)
+            final_conf = int(final_conf * 0.92 + 8)  # petite pénalité car on a changé
+            
+        # Dans tous les cas, on garde en mémoire le meilleur accord global
+        global_best_chord = candidate_best_chord[final_key]
+        global_best_chord_score = candidate_best_chord_score[final_key] * 100
+
     else:
-        best_chord_name = "None"
-        best_chord_score = 0
+        global_best_chord = "None"
+        global_best_chord_score = 0
 
     # Génération accords pour affichage (sur final_key ajustée)
     diatonic_chords = get_diatonic_chords(final_key)
@@ -475,8 +520,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "target_diatonic_chords": target_diatonic_chords,
         "validation_score": int(validation_score),
         "key_alternatives": [k for k in candidates if k != final_key],
-        "best_chord": best_chord_name,  # Ajout du meilleur accord
-        "best_chord_consonance": int(best_chord_score)  # Score consonance
+        "best_chord": global_best_chord,  # Ajout du meilleur accord
+        "best_chord_consonance": int(global_best_chord_score)  # Score consonance
     }
 
     if TELEGRAM_TOKEN and CHAT_ID:

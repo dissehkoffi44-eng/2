@@ -920,4 +920,3 @@ with st.sidebar:
     if st.button("🔄 Vider le cache & relancer"):
         st.cache_data.clear()
         st.rerun()
-"""</parameter>

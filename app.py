@@ -369,7 +369,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     if not votes:
         return None
 
-    most_common = votes.most_common(3)  # Top 3 pour candidats (plus que 2 pour comparaison)
+    most_common = votes.most_common(4)  # Top 4 pour candidats
 
     final_key = most_common[0][0]
     final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
@@ -412,7 +412,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     top_indices = np.argsort(chroma_norm)[-5:]  # Top 5 notes
     top_notes = set(NOTES_LIST[i] for i in top_indices)
 
-    # Candidats : Top 3 des votes
+    # Candidats : Top 4 des votes
     candidates = [mc[0] for mc in most_common]
 
     # Score match : Proportion de top notes dans diatoniques (pondéré 0.3 sur conf)
@@ -438,8 +438,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     #   RAFFINEMENT FINAL : choisir la tonalité qui contient l'accord le plus consonant
     # =============================================================================
 
-    # On garde les 3–4 meilleurs candidats (pas que le winner actuel)
-    most_common = votes.most_common(4)  # ex: top 4 des votes
+    # On garde les 4 meilleurs candidats (pas que le winner actuel)
     top_candidates = [mc[0] for mc in most_common]
 
     # On va tester la consonance du meilleur accord pour chaque candidat
@@ -474,10 +473,10 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         best_consonance_score = candidate_consonance[best_candidate_key]
         
         # On ne change que si le gain est significatif (éviter flip inutile)
-        # ex: on exige au moins +8–12% de consonance en plus
+        # ex: on exige au moins +5% de consonance en plus (seuil abaissé pour plus de sensibilité)
         current_consonance = candidate_best_chord_score.get(final_key, 0)
         
-        if best_consonance_score > current_consonance + 0.08:
+        if best_consonance_score > current_consonance + 0.05:
             st.info(f"Raffinage par consonance → changement de {final_key} → {best_candidate_key} "
                     f"(meilleur accord {candidate_best_chord[best_candidate_key]} : "
                     f"{best_consonance_score:.3f} vs {current_consonance:.3f})")

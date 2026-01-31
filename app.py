@@ -17,6 +17,7 @@ from pydub import AudioSegment
 from scipy.cluster.hierarchy import fcluster
 from scipy.spatial.distance import pdist
 import logging
+import textwrap
 
 # --- FORCE FFMPEG PATH (WINDOWS FIX) ---
 if os.path.exists(r'C:\ffmpeg\bin'):
@@ -436,7 +437,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
 
     if not votes:
-        return {"key": "Atonal", "conf": 0, "tempo": 0, "tuning": 440, "modulation": False, "name": file_name, "diatonic_chords": [], "target_diatonic_chords": [], "validation_score": 0, "key_alternatives": [], "best_chord": "None", "best_chord_consonance": 0, "best_global_chord": "None", "best_global_consonance": 0, "camelot": "??", "target_camelot": None, "mod_target_percentage": 0, "mod_ends_in_target": False, "modulation_time_str": None, "chroma": [0]*12, "timeline": []}
+        return {"key": "Atonal", "conf": 0, "tempo": 0, "tuning": 440, "modulation": False, "name": file_name, "diatonic_chords": [], "target_diatonic_chords": [], "validation_score": 0, "key_alternatives": [], "best_chord": "None", "best_chord_consonance": 0, "best_global_chord": "None", "best_global_consonance": 0, "camelot": "??", "target_camelot": None, "mod_target_percentage": 0, "mod_ends_in_target": False, "modulation_time_str": None, "chroma": [0]*12, "timeline": [], "best_verified_key": "Atonal"}
 
     most_common = votes.most_common(3)  # Top 3 pour candidats (plus que 2 pour comparaison)
 
@@ -513,6 +514,22 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     best_match = matches[best_key]
     final_conf = int(final_conf * (0.7 + 0.3 * best_match))  # Ajuste conf
     final_key = best_key  # Switch si meilleur match
+
+    # Additional verification for best key
+    all_candidates = [final_key] + [k for k in candidates if k != final_key]
+    stability_scores = {}
+    for k in all_candidates:
+        segments_k = [t for t in timeline if t['Note'] == k]
+        if segments_k:
+            prop = len(segments_k) / len(timeline)
+            avg_conf = np.mean([t['Conf'] for t in segments_k])
+            stability = prop * avg_conf
+        else:
+            stability = 0
+        combined = 0.6 * stability + 0.4 * matches.get(k, 0)
+        stability_scores[k] = combined
+
+    best_verified_key = max(stability_scores, key=stability_scores.get)
 
     # --- AJOUT : Test de consonance sur tous les accords possibles ---
     diatonic_chords = get_diatonic_chords(final_key)
@@ -618,7 +635,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         "best_chord": best_chord_name,  # Best diatonic
         "best_chord_consonance": int(best_chord_score),
         "best_global_chord": best_global_chord,  # Best global excluant roots
-        "best_global_consonance": int(best_global_score)
+        "best_global_consonance": int(best_global_score),
+        "best_verified_key": best_verified_key
     }
 
     if TELEGRAM_TOKEN and CHAT_ID:
@@ -686,22 +704,24 @@ def get_chord_js(btn_id, key_str):
     except ValueError:
         return ""
     intervals_str = 'minor' if mode in ['minor', 'aeolian', 'dorian', 'phrygian', 'locrian'] else 'major'
-    return f"""
-    document.getElementById('{btn_id}').onclick = function() {{
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const freqs = {{'C':261.6,'C#':277.2,'D':293.7,'D#':311.1,'E':329.6,'F':349.2,'F#':370.0,'G':392.0,'G#':415.3,'A':440.0,'A#':466.2,'B':493.9}};
-        const intervals = '{intervals_str}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
-        intervals.forEach(i => {{
-            const o = ctx.createOscillator(); const g = ctx.createGain();
-            o.type = 'triangle'; 
-            o.frequency.setValueAtTime(freqs['{note}'] * Math.pow(2, i/12), ctx.currentTime);
-            g.gain.setValueAtTime(0, ctx.currentTime);
-            g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.1);
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
-            o.connect(g); g.connect(ctx.destination);
-            o.start(); o.stop(ctx.currentTime + 2.0);
-        }});
-    }}; """
+    js_code = f"""
+document.getElementById('{btn_id}').onclick = function() {{
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const freqs = {{'C':261.6,'C#':277.2,'D':293.7,'D#':311.1,'E':329.6,'F':349.2,'F#':370.0,'G':392.0,'G#':415.3,'A':440.0,'A#':466.2,'B':493.9}};
+  const intervals = '{intervals_str}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
+  intervals.forEach(i => {{
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = 'triangle'; 
+    o.frequency.setValueAtTime(freqs['{note}'] * Math.pow(2, i/12), ctx.currentTime);
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 2.0);
+  }});
+}};
+"""
+    return textwrap.dedent(js_code)
 
 # ────────────────────────────────────────────────
 #               INTERFACE PRINCIPALE
@@ -744,7 +764,7 @@ if uploaded_files:
             with results_container:
                 st.markdown(f"<div class='file-header'> {data['name']}</div>", unsafe_allow_html=True)
                 
-                key_col, chord_col = st.columns(2)
+                key_col, verified_col, chord_col = st.columns(3)
 
                 with key_col:
                     color = "linear-gradient(135deg, #065f46, #064e3b)" if data['conf'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
@@ -779,6 +799,17 @@ if uploaded_files:
                                 CAMELOT <b>{data['camelot']}</b>  •  Confiance <b>{data['conf']}%</b>
                             </p>
                             {mod_alert}
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                with verified_col:
+                    verified_color = "linear-gradient(135deg, #065f46, #064e3b)" if data['best_verified_key'] == data['key'] else "linear-gradient(135deg, #4338ca, #3730a3)"
+                    st.markdown(f"""
+                        <div class="report-card" style="background:{verified_color};">
+                            <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['best_verified_key'].upper()}</h1>
+                            <p style="font-size:1.5em; opacity:0.92;">
+                                VERIFIED BEST KEY
+                            </p>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -865,7 +896,7 @@ if uploaded_files:
                         st.table(df_chords)  # Ou st.dataframe pour interactif
                         st.markdown(f"**Score de validation (coverage chroma) :** {data.get('validation_score', 0)}%")
                         if data.get('key_alternatives'):
-                            st.warning(f"Alternatives possibles : {', '.join(data['key_alternatives'])} – Vérifie manuellement !")
+                            st.warning(f"Alternatives possibles : {', '.join(data['key_alternatives'])} – Verified Best: {data['best_verified_key']}")
                     else:
                         st.info("Pas d'accords générés (tonalité inconnue).")
                     
@@ -889,3 +920,4 @@ with st.sidebar:
     if st.button("🔄 Vider le cache & relancer"):
         st.cache_data.clear()
         st.rerun()
+"""</parameter>

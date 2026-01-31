@@ -1,4 +1,5 @@
 streamlit
+hmmlearn
 librosa
 numpy
 pandas

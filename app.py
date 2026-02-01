@@ -920,21 +920,49 @@ if uploaded_files:
                 
                 # --- AJOUT : Affichage des accords et validation ---
                 with st.expander("🎹 Accords diatoniques (comme dans Piano Companion) – pour valider la tonalité", expanded=False):
+                    chroma_avg = np.array(data['chroma'])
+                    chroma_norm = chroma_avg / np.max(chroma_avg + 1e-6)
+
+                    def add_consonance_info(df, chroma_norm):
+                        if df.empty:
+                            return df
+                        df['Consonance (%)'] = df['notes_list'].apply(lambda notes: round(test_chord_consonance(chroma_norm, notes) * 100, 1))
+                        df['notes_with_%'] = df['notes_list'].apply(lambda notes: ' '.join([f"{n} ({round(chroma_norm[NOTES_LIST.index(n)] * 100, 1)}%)" for n in notes]))
+                        df = df[['roman', 'name', 'notes_with_%', 'Consonance (%)']]
+                        df.columns = ['Roman', 'Chord', 'Notes (with % consonance)', 'Chord Consonance (%)']
+                        return df
+
+                    # Main key
                     chords = data.get("diatonic_chords", [])
                     if chords:
                         df_chords = pd.DataFrame(chords)
-                        st.table(df_chords)  # Ou st.dataframe pour interactif
+                        df_chords = add_consonance_info(df_chords, chroma_norm)
+                        main_camelot = data.get('camelot', '??')
+                        st.subheader(f"Accords pour la tonalité principale ({data['key'].upper()} - Camelot {main_camelot})")
+                        st.table(df_chords)
                         st.markdown(f"**Score de validation (coverage chroma) :** {data.get('validation_score', 0)}%")
                         if data.get('key_alternatives'):
                             st.warning(f"Alternatives possibles : {', '.join(data['key_alternatives'])} – Verified Best: {data['best_verified_key']}")
                     else:
                         st.info("Pas d'accords générés (tonalité inconnue).")
-                    
+
+                    # Verified key
+                    verified_key = data.get('best_verified_key', 'Unknown')
+                    verified_chords = get_diatonic_chords(verified_key)
+                    if verified_chords and verified_key != data['key']:
+                        df_verified = pd.DataFrame(verified_chords)
+                        df_verified = add_consonance_info(df_verified, chroma_norm)
+                        verified_camelot = CAMELOT_MAP.get(verified_key, "??")
+                        st.subheader(f"Accords pour la tonalité vérifiée ({verified_key.upper()} - Camelot {verified_camelot})")
+                        st.table(df_verified)
+
                     # Pour la modulation
                     target_chords = data.get("target_diatonic_chords", [])
                     if target_chords:
-                        st.subheader("Accords pour la tonalité cible (modulation)")
                         df_target = pd.DataFrame(target_chords)
+                        df_target = add_consonance_info(df_target, chroma_norm)
+                        target_camelot = data.get('target_camelot', '??')
+                        st.subheader(f"Accords pour la tonalité cible (modulation) ({data['target_key'].upper()} - Camelot {target_camelot})")
                         st.table(df_target)
                     
                     # Affichage du meilleur accord

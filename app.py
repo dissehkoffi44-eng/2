@@ -380,7 +380,9 @@ def test_chord_consonance(chroma_norm, chord_notes_list):
     except ValueError:
         return 0
 
-def process_audio_precision(file_bytes, file_name, _progress_callback=None):
+# ... (le reste du code avant process_audio_precision reste identique)
+
+def process_audio_precision(file_bytes, file_name, _progress_callback=None, retry=False):
     ext = file_name.split('.')[-1].lower()
     try:
         if ext == 'm4a':
@@ -399,6 +401,75 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     except Exception as e:
         st.error(f"Erreur de lecture du fichier {file_name}: {e}")
         return None
+
+    duration = librosa.get_duration(y=y, sr=sr)
+    tuning = librosa.estimate_tuning(y=y, sr=sr)
+
+    # Ajustements dynamiques basés sur retry
+    strict_filter = not retry  # Strict seulement au premier essai
+    atonal_threshold = 0.5 if retry else 0.7  # Plus bas en retry
+    continue_threshold = 0.6 if retry else 0.9  # Plus bas en retry
+    step_size = 10 if retry else 6  # Plus large en retry pour capturer plus
+
+    y_filt_strict = apply_sniper_filters(y, sr, strict=strict_filter)
+    y_filt_soft = apply_sniper_filters(y, sr, strict=False)
+
+    step, timeline, votes = step_size, [], Counter()
+    segments = list(range(0, max(1, int(duration) - step), 2))
+    total_segments = len(segments)
+    
+    for idx, start in enumerate(segments):
+        if _progress_callback:
+            prog_internal = int((idx / total_segments) * 100)
+            _progress_callback(prog_internal, f"Scan : {start}s / {int(duration)}s{' (retry mode)' if retry else ''}")
+
+        idx_start, idx_end = int(start * sr), int((start + step) * sr)
+        seg_strict = y_filt_strict[idx_start:idx_end]
+        seg_soft = y_filt_soft[idx_start:idx_end]
+        if len(seg_strict) < 1000 or np.max(np.abs(seg_strict)) < 0.01: continue
+        
+        c_raw_strict = librosa.feature.chroma_cqt(y=seg_strict, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)
+        c_raw_soft = librosa.feature.chroma_cqt(y=seg_soft, sr=sr, tuning=tuning, n_chroma=36, bins_per_octave=36)
+        c_avg = 0.7 * np.mean(c_raw_strict, axis=1) + 0.3 * np.mean(c_raw_soft, axis=1)
+        c_avg = np.sum(c_avg.reshape(12, 3), axis=1)
+        b_seg = get_bass_priority(y[idx_start:idx_end], sr)
+        res = solve_key_sniper(c_avg, b_seg)
+        
+        if res['score'] < atonal_threshold:
+            res['key'] = "Atonal"
+            res['score'] = 0
+        
+        if res['score'] < continue_threshold: continue
+        
+        weight = 1.5 if (start < 15 or start > (duration - 20)) else 1.0
+        votes[res['key']] += int(res['score'] * 100 * weight)
+        timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
+
+    if not votes:
+        # Si toujours rien en retry, fallback à Atonal
+        return {"key": "Atonal", "conf": 0, "tempo": 0, "tuning": 440, "modulation": False, "name": file_name, "diatonic_chords": [], "target_diatonic_chords": [], "validation_score": 0, "key_alternatives": [], "best_chord": "None", "best_chord_consonance": 0, "best_global_chord": "None", "best_global_consonance": 0, "camelot": "??", "target_camelot": None, "mod_target_percentage": 0, "mod_ends_in_target": False, "modulation_time_str": None, "chroma": [0]*12, "timeline": [], "best_verified_key": "Atonal"}
+
+    most_common = votes.most_common(3)
+
+    final_key = most_common[0][0]
+    final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
+    
+    # ... (le reste de la fonction reste identique : modulation, tempo, chroma, etc.)
+
+    # À la fin de la fonction, avant return : vérifier si Atonal ou faible conf, et retry si pas déjà fait
+    if (final_key == "Atonal" or final_conf < 20) and not retry:
+        logging.info(f"Réajustement automatique pour {file_name} : résultat initial faible, lancement retry avec constantes assouplies.")
+        return process_audio_precision(file_bytes, file_name, _progress_callback, retry=True)  # Relance avec retry=True
+    
+    # Fallback pour tempo=0 : estimation alternative via autocorrélation
+    if res_obj['tempo'] == 0:
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr, aggregate=None)
+        res_obj['tempo'] = int(np.median(tempo)) if len(tempo) > 0 else 0
+
+    return res_obj
+
+# ... (le reste du code après reste identique)
 
     duration = librosa.get_duration(y=y, sr=sr)
     tuning = librosa.estimate_tuning(y=y, sr=sr)

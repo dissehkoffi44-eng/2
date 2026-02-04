@@ -683,9 +683,11 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None, retr
 
             caption = (f"  *RCDJ228 MUSIC SNIPER - RAPPORT*\n━━━━━━━━━━━━\n"
                        f"  *FICHIER:* `{file_name}`\n"
-                       f"  *TONALITÉ:* `{final_key.upper()}`\n"
+                       f"  *TONALITÉ PRINCIPALE:* `{final_key.upper()}`\n"
                        f"  *CAMELOT:* `{res_obj['camelot']}`\n"
                        f"  *CONFIANCE:* `{res_obj['conf']}%`\n"
+                       f"  *TONALITÉ VÉRIFIÉE:* `{res_obj['best_verified_key'].upper()}`\n"
+                       f"  *MEILLEUR ACCORD:* `{res_obj['best_global_chord'].upper()}` ({res_obj['best_global_consonance']}% consonance)\n"
                        f"  *TEMPO:* `{res_obj['tempo']} BPM`\n"
                        f"  *ACCORDAGE:* `{res_obj['tuning']} Hz`\n"
                        f"{mod_line if mod_detected else '  *STABILITÉ TONALE:* OK'}\n━━━━━━━━━━━━")

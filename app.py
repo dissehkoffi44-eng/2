@@ -142,7 +142,7 @@ def get_compatible_keys(key, threshold=0.85):
     for other_key in [f"{n} {m}" for n in NOTES_LIST for m in MODES]:
         if other_key == key: continue
         other_notes = get_diatonic_notes(other_key)
-        overlap = len(diat_notes.intersection(other_notes)) / 7
+        overlap = len(diat_notes.intersection(other_notes)) / 7 if diat_notes else 0
         if overlap >= threshold:
             camelot = CAMELOT_MAP.get(other_key, "??")
             compat.append(f"{other_key} ({camelot}) - Overlap: {overlap:.0%}")
@@ -204,8 +204,8 @@ def get_mixing_advice(data):
 
     lines.append("")
     lines.append("**Compatibilités safe (basé sur overlap notes >85%) :**")
-    compat_principal = get_compatible_keys(data['key'])
-    lines.append(f"Pour principal ({data['key']}) : {', '.join(compat_principal)}")
+    compat_principal = get_compatible_keys(data['best_verified_key'])
+    lines.append(f"Pour principal ({data['best_verified_key']}) : {', '.join(compat_principal)}")
     if data.get('modulation'):
         compat_target = get_compatible_keys(data['target_key'])
         lines.append(f"Pour target ({data['target_key']}) : {', '.join(compat_target)}")
@@ -754,7 +754,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None, retr
             verified_camelot = CAMELOT_MAP.get(res_obj['best_verified_key'], "??")
             chord_camelot = infer_chord_key(res_obj['best_global_chord'])
 
-            compat_principal = get_compatible_keys(final_key)
+            compat_principal = get_compatible_keys(res_obj['best_verified_key'])
             compat_target = get_compatible_keys(target_key) if mod_detected else []
 
             caption = (f"  *RCDJ228 MUSIC SNIPER - RAPPORT*\n━━━━━━━━━━━━\n"

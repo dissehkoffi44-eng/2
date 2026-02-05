@@ -43,12 +43,47 @@ CAMELOT_MAP = {
     # Note: Pour modes étendus, mapper approximativement (e.g., mixolydian comme major)
 }
 
-# Ajout de mappings approximatifs pour modes
-for mode in MODES:
-    if mode not in ['major', 'minor']:
-        for note in NOTES_LIST:
-            base_mode = 'major' if mode in ['mixolydian', 'lydian', 'ionian'] else 'minor'
-            CAMELOT_MAP[f"{note} {mode}"] = CAMELOT_MAP.get(f"{note} {base_mode}", "??") + " (approx)"
+# Offsets pour calculer la root de la major parente
+MODE_PARENT_OFFSETS = {
+    'major': 0,
+    'ionian': 0,
+    'mixolydian': -7,
+    'lydian': -5,
+    'minor': -9,
+    'aeolian': -9,
+    'dorian': -2,
+    'phrygian': -4,
+    'locrian': -11  # 7e degré
+}
+
+# Mise à jour du mapping pour tous les modes (standards et étendus)
+for note in NOTES_LIST:
+    for mode in MODES:
+        # Pour major/minor/ionian/aeolian, utiliser le mapping direct
+        if mode in ['ionian', 'aeolian']:
+            base_mode = 'major' if mode == 'ionian' else 'minor'
+            CAMELOT_MAP[f"{note} {mode}"] = CAMELOT_MAP.get(f"{note} {base_mode}", "??")
+        elif mode in ['major', 'minor']:
+            continue  # Déjà mappés
+
+        # Pour modes étendus, calculer la root de la major parente
+        root_idx = NOTES_LIST.index(note)
+        offset = MODE_PARENT_OFFSETS.get(mode, 0)
+        parent_root_idx = (root_idx + offset) % 12
+        parent_root = NOTES_LIST[parent_root_idx]
+
+        # Détermine si major-like ou minor-like pour choisir B ou A
+        if mode in ['major', 'ionian', 'mixolydian', 'lydian']:
+            parent_mode = 'major'  # Camelot B
+        else:  # minor, aeolian, dorian, phrygian, locrian
+            parent_mode = 'minor'  # Camelot A (relative minor de la major parente)
+            # Relative minor = -3 demi-tons de la major parente
+            relative_minor_idx = (parent_root_idx - 3) % 12
+            parent_root = NOTES_LIST[relative_minor_idx]
+
+        camelot_key = f"{parent_root} {parent_mode}"
+        camelot = CAMELOT_MAP.get(camelot_key, "??")
+        CAMELOT_MAP[f"{note} {mode}"] = camelot + " (modal equiv)" if camelot != "??" else "??"
 
 PROFILES = {
     "krumhansl": {
@@ -385,6 +420,19 @@ def test_chord_consonance(chroma_norm, chord_notes_list):
     except ValueError:
         return 0
 
+def infer_chord_key(chord_name):
+    """Infère une clé (root + mode) à partir du nom de l'accord pour mapper à Camelot."""
+    if not chord_name or chord_name == "None":
+        return "??"
+    try:
+        root = chord_name[:-3] if 'dim' in chord_name else chord_name[:-3] if 'min' in chord_name else chord_name[:-3] if 'maj' in chord_name else chord_name
+        ctype = chord_name[len(root):]
+        mode = 'major' if ctype == 'maj' else 'minor' if ctype == 'min' else 'locrian' if ctype == 'dim' else 'major'
+        key_str = f"{root} {mode}"
+        return CAMELOT_MAP.get(key_str, "??")
+    except:
+        return "??"
+
 def process_audio_precision(file_bytes, file_name, _progress_callback=None, retry=False):
     ext = file_name.split('.')[-1].lower()
     try:
@@ -678,16 +726,19 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None, retr
             mod_line = ""
             if mod_detected:
                 perc = res_obj["mod_target_percentage"]
-                end_txt = " → **fin en " + target_key.upper() + "**" if res_obj['mod_ends_in_target'] else ""
-                mod_line = f"  *MODULATION →* `{target_key.upper()}` ({res_obj['target_camelot']}) ≈ **{res_obj['modulation_time_str']}** ({perc}%){end_txt}"
+                end_txt = " → **fin en " + target_key.upper() + " (" + res_obj['target_camelot'] + ")**" if res_obj['mod_ends_in_target'] else ""
+                mod_line = f"  *MODULATION →* `{target_key.upper()} ({res_obj['target_camelot']})` ≈ **{res_obj['modulation_time_str']}** ({perc}%){end_txt}"
+
+            verified_camelot = CAMELOT_MAP.get(res_obj['best_verified_key'], "??")
+            chord_camelot = infer_chord_key(res_obj['best_global_chord'])
 
             caption = (f"  *RCDJ228 MUSIC SNIPER - RAPPORT*\n━━━━━━━━━━━━\n"
                        f"  *FICHIER:* `{file_name}`\n"
-                       f"  *TONALITÉ PRINCIPALE:* `{final_key.upper()}`\n"
+                       f"  *TONALITÉ PRINCIPALE:* `{final_key.upper()} ({res_obj['camelot']})`\n"
                        f"  *CAMELOT:* `{res_obj['camelot']}`\n"
                        f"  *CONFIANCE:* `{res_obj['conf']}%`\n"
-                       f"  *TONALITÉ VÉRIFIÉE:* `{res_obj['best_verified_key'].upper()}`\n"
-                       f"  *MEILLEUR ACCORD:* `{res_obj['best_global_chord'].upper()}` ({res_obj['best_global_consonance']}% consonance)\n"
+                       f"  *TONALITÉ VÉRIFIÉE:* `{res_obj['best_verified_key'].upper()} ({verified_camelot})`\n"
+                       f"  *MEILLEUR ACCORD:* `{res_obj['best_global_chord'].upper()} ({chord_camelot})` ({res_obj['best_global_consonance']}% consonance)\n"
                        f"  *TEMPO:* `{res_obj['tempo']} BPM`\n"
                        f"  *ACCORDAGE:* `{res_obj['tuning']} Hz`\n"
                        f"{mod_line if mod_detected else '  *STABILITÉ TONALE:* OK'}\n━━━━━━━━━━━━")
@@ -832,22 +883,24 @@ if uploaded_files:
 
                 with verified_col:
                     verified_color = "linear-gradient(135deg, #065f46, #064e3b)" if data['best_verified_key'] == data['key'] else "linear-gradient(135deg, #4338ca, #3730a3)"
+                    verified_camelot = CAMELOT_MAP.get(data['best_verified_key'], "??")
                     st.markdown(f"""
                         <div class="report-card" style="background:{verified_color};">
                             <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['best_verified_key'].upper()}</h1>
                             <p style="font-size:1.5em; opacity:0.92;">
-                                VERIFIED BEST KEY
+                                VERIFIED BEST KEY  •  CAMELOT <b>{verified_camelot}</b>
                             </p>
                         </div>
                         """, unsafe_allow_html=True)
 
                 with chord_col:
                     color_chord = "linear-gradient(135deg, #4338ca, #3730a3)" if data['best_global_consonance'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
+                    chord_camelot = infer_chord_key(data['best_global_chord'])
                     st.markdown(f"""
                         <div class="report-card" style="background:{color_chord};">
                             <h1 style="font-size:5.4em; margin:8px 0; font-weight:900;">{data['best_global_chord'].upper()}</h1>
                             <p style="font-size:1.5em; opacity:0.92;">
-                                MEILLEUR ACCORD  •  Consonance <b>{data['best_global_consonance']}%</b>
+                                MEILLEUR ACCORD  •  CAMELOT <b>{chord_camelot}</b>  •  Consonance <b>{data['best_global_consonance']}%</b>
                             </p>
                         </div>
                         """, unsafe_allow_html=True)

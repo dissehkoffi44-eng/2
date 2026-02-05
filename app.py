@@ -135,6 +135,19 @@ def get_neighbor_camelot(camelot_str: str, offset: int) -> str:
     except:
         return '??'
 
+def get_compatible_keys(key, threshold=0.85):
+    """Retourne liste de keys compatibles basées sur overlap notes."""
+    diat_notes = get_diatonic_notes(key)  # Set de 7 notes
+    compat = []
+    for other_key in [f"{n} {m}" for n in NOTES_LIST for m in MODES]:
+        if other_key == key: continue
+        other_notes = get_diatonic_notes(other_key)
+        overlap = len(diat_notes.intersection(other_notes)) / 7
+        if overlap >= threshold:
+            camelot = CAMELOT_MAP.get(other_key, "??")
+            compat.append(f"{other_key} ({camelot}) - Overlap: {overlap:.0%}")
+    return compat[:5]  # Top 5
+
 def get_mixing_advice(data):
     """
     Génère les conseils de mix suivant EXACTEMENT la checklist fournie
@@ -188,6 +201,15 @@ def get_mixing_advice(data):
         lines.append(f"→ **{target_camelot}** ou voisins (±1 sur la même roue A/B)")
     else:
         lines.append(f"→ **{principal_camelot}** ou voisins (±1)")
+
+    lines.append("")
+    lines.append("**Compatibilités safe (basé sur overlap notes >85%) :**")
+    compat_principal = get_compatible_keys(data['key'])
+    lines.append(f"Pour principal ({data['key']}) : {', '.join(compat_principal)}")
+    if data.get('modulation'):
+        compat_target = get_compatible_keys(data['target_key'])
+        lines.append(f"Pour target ({data['target_key']}) : {', '.join(compat_target)}")
+    lines.append("→ Vérifie auditif pour éviter clashes sur intervalles clés (ex : b7 vs 7 maj).")
 
     return "\n".join(lines)
 
@@ -732,6 +754,9 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None, retr
             verified_camelot = CAMELOT_MAP.get(res_obj['best_verified_key'], "??")
             chord_camelot = infer_chord_key(res_obj['best_global_chord'])
 
+            compat_principal = get_compatible_keys(final_key)
+            compat_target = get_compatible_keys(target_key) if mod_detected else []
+
             caption = (f"  *RCDJ228 MUSIC SNIPER - RAPPORT*\n━━━━━━━━━━━━\n"
                        f"  *FICHIER:* `{file_name}`\n"
                        f"  *TONALITÉ PRINCIPALE:* `{final_key.upper()} ({res_obj['camelot']})`\n"
@@ -741,7 +766,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None, retr
                        f"  *MEILLEUR ACCORD:* `{res_obj['best_global_chord'].upper()} ({chord_camelot})` ({res_obj['best_global_consonance']}% consonance)\n"
                        f"  *TEMPO:* `{res_obj['tempo']} BPM`\n"
                        f"  *ACCORDAGE:* `{res_obj['tuning']} Hz`\n"
-                       f"{mod_line if mod_detected else '  *STABILITÉ TONALE:* OK'}\n━━━━━━━━━━━━")
+                       f"{mod_line if mod_detected else '  *STABILITÉ TONALE:* OK'}\n━━━━━━━━━━━━"
+                       f"*Compat safe principal:* {', '.join(compat_principal[:3])}\n*Compat safe target:* {', '.join(compat_target[:3]) if mod_detected else 'N/A'}")
 
             # ─── AJOUT : CONSEIL RAPIDE MIX EN VERSION ULTRA-RÉSUMÉE ───
             advice_text = get_mixing_advice(res_obj)

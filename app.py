@@ -461,13 +461,17 @@ def process_audio(audio_file, file_name, progress_placeholder):
             # Ajout de la tonalité dominante au caption
             dom_line = f"\n🏆 *DOMINANTE:* `{dominant_key.upper()} ({res_obj['dominant_camelot']})` | *POURCENTAGE:* `{res_obj['dominant_percentage']}%` | *CONFIANCE:* `{res_obj['dominant_conf']}%`"
             
+            # Ajout de la tonalité pure
+            pure_line = f"\n🔒 *TONALITÉ PURE:* `{res_obj['confiance_pure'].upper()} ({res_obj['pure_camelot']})` | *AVIS:* `{res_obj['avis_expert']}`"
+            
             caption = (
                 f"🎯 *RCDJ228 MUSIC SNIPER*\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"📂 *FICHIER:* `{file_name}`\n"
                 f"🎹 *TONALITÉ MEILLEURE CONSONANCE:* `{final_key.upper()}` ({res_obj['camelot']}) | *CONFIANCE:* `{res_obj['conf']}%`\n"
-                + dom_line +
-                f"{mod_line}\n"
+                + dom_line
+                + pure_line
+                + f"{mod_line}\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"⏱ *TEMPO:* `{res_obj['tempo']} BPM`\n"
                 f"🎸 *ACCORDAGE:* `{res_obj['tuning']} Hz` ✅\n"
@@ -555,10 +559,10 @@ if uploaded_files:
             st.markdown(f"""
                 <div class="report-card" style="background:{analysis_data['color_bandeau']};">
                     <p style="letter-spacing:5px; opacity:0.8; font-size:0.8em;">SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}</p>
-                    <h1 style="font-size:4em; margin:10px 0; font-weight:900;">
-                        {analysis_data['pure_camelot']}
+                    <h1 style="font-size:3em; margin:10px 0; font-weight:900;">
+                        BEST CONSONANCE: {analysis_data['key'].upper()} ({analysis_data['camelot']}) {analysis_data['conf']}% | DOMINANT: {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_camelot']}) {analysis_data['dominant_percentage']}%
                     </h1>
-                    <p style="font-size:1.5em; font-weight:bold;">{analysis_data['confiance_pure'].upper()}</p>
+                    <p style="font-size:1.5em; font-weight:bold;">{analysis_data['confiance_pure'].upper()} ({analysis_data['pure_camelot']})</p>
                     {mod_alert}
                 </div>
             """, unsafe_allow_html=True)

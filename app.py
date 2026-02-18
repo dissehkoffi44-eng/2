@@ -389,8 +389,6 @@ def process_audio(audio_file, file_name, progress_placeholder):
                 last_key = last_counter.most_common(1)[0][0]
                 ends_in_target = (last_key == target_key)
 
-    tempo, _ = librosa.beat.beat_track(y=y_harm, sr=sr)  # Tempo sur section harmonique
-
     update_prog(100, "Analyse terminée")
     status_text.empty()
     progress_bar.empty()
@@ -440,7 +438,7 @@ def process_audio(audio_file, file_name, progress_placeholder):
 
     res_obj = {
         "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),
-        "conf": min(final_conf, 99), "tempo": int(float(tempo)),
+        "conf": min(final_conf, 99),
         "tuning": round(440 * (2**(tuning/12)), 1), "timeline": timeline,
         "chroma": chroma_avg, "modulation": mod_detected,
         "target_key": target_key, "target_camelot": CAMELOT_MAP.get(target_key, "??") if target_key else None,
@@ -483,7 +481,6 @@ def process_audio(audio_file, file_name, progress_placeholder):
                 + pure_line
                 + f"{mod_line}\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
-                f"⏱ *TEMPO:* `{res_obj['tempo']} BPM`\n"
                 f"🎸 *ACCORDAGE:* `{res_obj['tuning']} Hz` ✅\n"
                 f"🛡️ *SECTION HARMONIQUE:* {res_obj['harm_start']} → {res_obj['harm_end']}"
             )
@@ -586,8 +583,7 @@ if uploaded_files:
                 </div>
             """, unsafe_allow_html=True)
             
-            m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{analysis_data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)
+            m2, m3 = st.columns(2)
             with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{analysis_data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
             with m3:
                 btn_id = f"play_{hash(analysis_data['name'])}"

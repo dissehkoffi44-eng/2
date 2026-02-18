@@ -15,6 +15,9 @@ from datetime import datetime
 from pydub import AudioSegment
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
+import pickle
+import os
+import tempfile
 
 # --- CONFIGURATION SYSTÈME ---
 st.set_page_config(page_title="RCDJ228 MUSIC SNIPER", page_icon="🎯", layout="wide")
@@ -456,6 +459,21 @@ def process_audio(audio_file, file_name, progress_placeholder):
         "color_bandeau": color_bandeau,
     }
     
+    # Sauvegarde disque pour données lourdes
+    temp_dir = tempfile.mkdtemp()  # Créer un dossier temporaire persistant pour la session
+    timeline_path = os.path.join(temp_dir, f"{file_name}_timeline.pkl")
+    chroma_path = os.path.join(temp_dir, f"{file_name}_chroma.npy")
+    with open(timeline_path, 'wb') as tf:
+        pickle.dump(res_obj['timeline'], tf)
+    np.save(chroma_path, res_obj['chroma'])
+    
+    # Stocke chemins au lieu des données en mémoire
+    res_obj['timeline_path'] = timeline_path
+    res_obj['chroma_path'] = chroma_path
+    res_obj['temp_dir'] = temp_dir  # Pour nettoyage ultérieur si besoin
+    del res_obj['timeline']  # Supprime de la mémoire
+    del res_obj['chroma']
+    
     # --- RAPPORT TELEGRAM ENRICHI (RADAR + TIMELINE) ---
     if TELEGRAM_TOKEN and CHAT_ID:
         try:
@@ -545,7 +563,7 @@ st.markdown("#### Système d'Analyse Harmonique 99% précis")
 # Ajout d'un placeholder pour le statut global en haut de la page
 global_status = st.empty()
 
-uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['mp3','wav','flac','m4a'], accept_multiple_files=True, key=f"uploader_{datetime.now().timestamp()}")
 
 # Initialiser session_state pour stocker les analyses
 if 'analyses' not in st.session_state:
@@ -564,8 +582,14 @@ if uploaded_files:
         progress_zone = st.container()
         
         for f in reversed(files_to_analyze):  # Garder reversed pour analyser les derniers en premier
-            analysis_data = process_audio(f, f.name, progress_zone)
+            file_bytes = f.getvalue()  # Charge seulement ici
+            analysis_data = process_audio(io.BytesIO(file_bytes), f.name, progress_zone)  # Passe BytesIO directement
             st.session_state.analyses[f.name] = analysis_data
+            del file_bytes  # Libère immédiatement les bytes
+            gc.collect()  # Force le garbage collector
+            if len(st.session_state.analyses) > 5:  # Limite à 5 fichiers
+                oldest_file = next(iter(st.session_state.analyses))  # Premier ajouté
+                del st.session_state.analyses[oldest_file]
         
         global_status.success("Tous les fichiers ont été analysés avec succès !")
         st.session_state.analyzing = False
@@ -574,6 +598,11 @@ if uploaded_files:
     for i, f in enumerate(reversed(uploaded_files)):
         if f.name in st.session_state.analyses:
             analysis_data = st.session_state.analyses[f.name]
+            
+            # Charge depuis disque seulement pour l'affichage
+            with open(analysis_data['timeline_path'], 'rb') as tf:
+                timeline = pickle.load(tf)
+            chroma = np.load(analysis_data['chroma_path'])
             
             with st.container():
                 st.markdown(f"<div class='file-header'>📂 ANALYSE : {analysis_data['name']}</div>", unsafe_allow_html=True)
@@ -614,15 +643,23 @@ if uploaded_files:
 
                 c1, c2 = st.columns([2, 1])
                 with c1:
-                    fig_tl = px.line(pd.DataFrame(analysis_data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
+                    fig_tl = px.line(pd.DataFrame(timeline), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
                     fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_tl, use_container_width=True, key=f"timeline_{analysis_data['name']}_{i}")
                 with c2:
-                    fig_radar = go.Figure(data=go.Scatterpolar(r=analysis_data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
+                    fig_radar = go.Figure(data=go.Scatterpolar(r=chroma, theta=NOTES_LIST, fill='toself', line_color='#10b981'))
                     fig_radar.update_layout(template="plotly_dark", height=300, margin=dict(l=40, r=40, t=30, b=20), polar=dict(radialaxis=dict(visible=False)), paper_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{analysis_data['name']}_{i}")
                 
                 st.markdown("<hr style='border-color: #30363d; margin-bottom:40px;'>", unsafe_allow_html=True)
+            
+            # Libère après usage
+            del timeline, chroma
+            gc.collect()
+    
+    uploaded_files = None  # Libère la référence
+    del uploaded_files  # Si plus besoin
+    gc.collect()
 
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2569/2569107.png", width=80)
@@ -630,4 +667,5 @@ with st.sidebar:
     if st.button("🧹 Vider la file d'analyse"):
         st.session_state.analyses = {}
         st.session_state.analyzing = False
+        gc.collect()  # Ajout ici
         st.rerun()

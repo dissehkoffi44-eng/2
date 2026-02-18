@@ -400,8 +400,16 @@ def process_audio(audio_file, file_name, progress_placeholder):
     avis_expert = "Analyse Stable"
     color_bandeau = "linear-gradient(135deg, #1e293b, #0f172a)"
 
-    # CAS 1 : FIN SUR MODULATION (Priorité absolue)
-    if mod_detected and ends_in_target:
+    # --- AJOUT DE LA RÈGLE DE SAUVETAGE (Duel Consonance vs Dominante) ---
+    
+    # Si la consonance est trop faible mais que la dominante est solide
+    if final_conf < 55 and dominant_conf > 70:
+        confiance_pure_key = dominant_key
+        avis_expert = f"🏆 DOMINANTE PLUS SOLIDE ({CAMELOT_MAP.get(dominant_key, '??')})"
+        color_bandeau = "linear-gradient(135deg, #1e3a8a, #172554)" # Bleu foncé stable
+    
+    # Sinon, on garde les règles habituelles
+    elif mod_detected and ends_in_target:
         confiance_pure_key = target_key
         avis_expert = f"🏁 FIN SUR MODULATION ({CAMELOT_MAP.get(target_key, '??')})"
         color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)"

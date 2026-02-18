@@ -396,12 +396,24 @@ def process_audio(audio_file, file_name, progress_placeholder):
     progress_bar.empty()
 
     # --- MOTEUR DE DÉCISION SNIPER ---
-    confiance_pure_key = final_key
-    avis_expert = "Analyse Stable"
-    color_bandeau = "linear-gradient(135deg, #1e293b, #0f172a)"
+    dominant_conf = min(dominant_conf, 99)  # Correction du bug de dépassement
 
-    # --- AJOUT DE LA RÈGLE DE SAUVETAGE (Duel Consonance vs Dominante) ---
+    confiance_pure_key = final_key
+    avis_expert = "✅ ANALYSE STABLE"
+    color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)"
+
+    # --- RÈGLE DE CONCORDANCE FORTE (Priorité Stabilité) ---
     
+    # 1. On vérifie si la Consonance et la Dominante pointent vers la même note
+    # avec une confiance de Consonance supérieure à 85%
+    is_solid_match = (final_key == dominant_key and final_conf > 85)
+
+    if is_solid_match:
+        # Dans ce cas, on ignore toute modulation, on reste sur la base solide
+        confiance_pure_key = final_key
+        avis_expert = "💎 ANALYSE ULTRA-STABLE"
+        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Émeraude
+
     # Si la consonance est trop faible mais que la dominante est solide
     if final_conf < 55 and dominant_conf > 70:
         confiance_pure_key = dominant_key
@@ -413,11 +425,11 @@ def process_audio(audio_file, file_name, progress_placeholder):
         avis_expert = f"🏆 DOMINANTE ÉCRASANTE ({CAMELOT_MAP.get(dominant_key, '??')})"
         color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Emeraude
     
-    # Sinon, on garde les règles habituelles
-    elif mod_detected and ends_in_target:
+    # 2. Sinon, on regarde si une modulation de fin est vraiment importante
+    elif not is_solid_match and mod_detected and ends_in_target and target_percentage > 30:
         confiance_pure_key = target_key
         avis_expert = f"🏁 FIN SUR MODULATION ({CAMELOT_MAP.get(target_key, '??')})"
-        color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)"
+        color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)" # Bleu nuit
 
     # CAS SPÉCIFIQUE : ÉCRASEMENT PAR LA DOMINANTE (Cas Rich Homie Quan)
     elif dominant_percentage > 80 and dominant_conf > final_conf:

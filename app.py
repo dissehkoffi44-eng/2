@@ -440,7 +440,7 @@ def process_audio(audio_file, file_name, progress_placeholder):
 
     res_obj = {
         "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),
-        "conf": min(final_conf, 99), "tempo": int(float(tempo)),
+        "conf": min(final_conf, 99), "tempo": int(tempo),
         "tuning": round(440 * (2**(tuning/12)), 1), "timeline": timeline,
         "chroma": chroma_avg, "modulation": mod_detected,
         "target_key": target_key, "target_camelot": CAMELOT_MAP.get(target_key, "??") if target_key else None,

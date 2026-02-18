@@ -389,8 +389,12 @@ def process_audio(audio_file, file_name, progress_placeholder):
                 last_key = last_counter.most_common(1)[0][0]
                 ends_in_target = (last_key == target_key)
 
-    tempo_result = librosa.beat.beat_track(y=y_harm, sr=sr)
-    tempo = tempo_result[0] if isinstance(tempo_result, (tuple, list, np.ndarray)) else tempo_result  # Tempo sur section harmonique
+   # Correction pour éviter l'erreur "int(float(tempo))"
+    tempo_raw = librosa.beat.beat_track(y=y_harm, sr=sr)
+    if isinstance(tempo_raw, (tuple, list, np.ndarray)):
+        tempo = tempo_raw[0]  # On prend la première valeur (le BPM)
+    else:
+        tempo = tempo_raw
 
     update_prog(100, "Analyse terminée")
     status_text.empty()

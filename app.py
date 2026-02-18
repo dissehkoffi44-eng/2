@@ -406,6 +406,12 @@ def process_audio(audio_file, file_name, progress_placeholder):
         avis_expert = f"🏁 FIN SUR MODULATION ({CAMELOT_MAP.get(target_key, '??')})"
         color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)"
 
+    # CAS SPÉCIFIQUE : ÉCRASEMENT PAR LA DOMINANTE (Cas Rich Homie Quan)
+    elif dominant_percentage > 80 and dominant_conf > final_conf:
+        confiance_pure_key = dominant_key
+        avis_expert = "🔥 DOMINANCE TOTALE : Priorité à la présence sonore"
+        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert
+
     # CAS 2 : CONFLIT RELATIF (ex: 11A vs 11B)
     elif abs(int(CAMELOT_MAP.get(final_key, '0A')[:-1]) - int(dominant_camelot[:-1])) == 0:
         confiance_pure_key = dominant_key

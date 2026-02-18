@@ -18,6 +18,7 @@ from scipy.spatial.distance import pdist
 import pickle
 import os
 import tempfile
+import shutil
 
 # --- CONFIGURATION SYSTÈME ---
 st.set_page_config(page_title="RCDJ228 MUSIC SNIPER", page_icon="🎯", layout="wide")
@@ -459,21 +460,6 @@ def process_audio(audio_file, file_name, progress_placeholder):
         "color_bandeau": color_bandeau,
     }
     
-    # Sauvegarde disque pour données lourdes
-    temp_dir = tempfile.mkdtemp()  # Créer un dossier temporaire persistant pour la session
-    timeline_path = os.path.join(temp_dir, f"{file_name}_timeline.pkl")
-    chroma_path = os.path.join(temp_dir, f"{file_name}_chroma.npy")
-    with open(timeline_path, 'wb') as tf:
-        pickle.dump(res_obj['timeline'], tf)
-    np.save(chroma_path, res_obj['chroma'])
-    
-    # Stocke chemins au lieu des données en mémoire
-    res_obj['timeline_path'] = timeline_path
-    res_obj['chroma_path'] = chroma_path
-    res_obj['temp_dir'] = temp_dir  # Pour nettoyage ultérieur si besoin
-    del res_obj['timeline']  # Supprime de la mémoire
-    del res_obj['chroma']
-    
     # --- RAPPORT TELEGRAM ENRICHI (RADAR + TIMELINE) ---
     if TELEGRAM_TOKEN and CHAT_ID:
         try:
@@ -534,6 +520,21 @@ def process_audio(audio_file, file_name, progress_placeholder):
         except Exception as e:
             st.error(f"Erreur d'envoi Telegram : {e}")
 
+    # Sauvegarde disque pour données lourdes
+    temp_dir = tempfile.mkdtemp()  # Créer un dossier temporaire persistant pour la session
+    timeline_path = os.path.join(temp_dir, f"{file_name}_timeline.pkl")
+    chroma_path = os.path.join(temp_dir, f"{file_name}_chroma.npy")
+    with open(timeline_path, 'wb') as tf:
+        pickle.dump(res_obj['timeline'], tf)
+    np.save(chroma_path, res_obj['chroma'])
+    
+    # Stocke chemins au lieu des données en mémoire
+    res_obj['timeline_path'] = timeline_path
+    res_obj['chroma_path'] = chroma_path
+    res_obj['temp_dir'] = temp_dir  # Pour nettoyage ultérieur si besoin
+    del res_obj['timeline']  # Supprime de la mémoire
+    del res_obj['chroma']
+    
     del y, y_filt; gc.collect()
     return res_obj
 
@@ -563,7 +564,7 @@ st.markdown("#### Système d'Analyse Harmonique 99% précis")
 # Ajout d'un placeholder pour le statut global en haut de la page
 global_status = st.empty()
 
-uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['mp3','wav','flac','m4a'], accept_multiple_files=True, key=f"uploader_{datetime.now().timestamp()}")
+uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['mp3','wav','flac','m4a'], accept_multiple_files=True, key="file_uploader")
 
 # Initialiser session_state pour stocker les analyses
 if 'analyses' not in st.session_state:
@@ -657,14 +658,15 @@ if uploaded_files:
             del timeline, chroma
             gc.collect()
     
-    uploaded_files = None  # Libère la référence
-    del uploaded_files  # Si plus besoin
     gc.collect()
 
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2569/2569107.png", width=80)
     st.header("Sniper Control")
     if st.button("🧹 Vider la file d'analyse"):
+        for data in list(st.session_state.analyses.values()):
+            if 'temp_dir' in data and os.path.exists(data['temp_dir']):
+                shutil.rmtree(data['temp_dir'])
         st.session_state.analyses = {}
         st.session_state.analyzing = False
         gc.collect()  # Ajout ici

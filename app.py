@@ -562,13 +562,27 @@ if uploaded_files:
                 mod_alert = f"<div class='modulation-alert'>⚠️ MODULATION : {analysis_data['target_key'].upper()} ({analysis_data['target_camelot']}) &nbsp; | &nbsp; CONFIANCE: <b>{analysis_data['target_conf']}%</b></div>"
             
             # Affichage des deux tonalités côte à côte
+            # --- REMPLACEZ CETTE SECTION DANS VOTRE CODE ---
             st.markdown(f"""
                 <div class="report-card" style="background:{analysis_data['color_bandeau']};">
-                    <p style="letter-spacing:5px; opacity:0.8; font-size:0.8em;">SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}</p>
-                    <h1 style="font-size:3em; margin:10px 0; font-weight:900;">
-                        BEST CONSONANCE: {analysis_data['key'].upper()} ({analysis_data['camelot']}) {analysis_data['conf']}% | DOMINANT: {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_camelot']}) {analysis_data['dominant_percentage']}%
+                    <p style="letter-spacing:5px; opacity:0.8; font-size:0.8em; margin-bottom:0px;">
+                        SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
+                    </p>
+                    
+                    <h1 style="font-size:5em; margin:0px 0; font-weight:900; line-height:1;">
+                        {analysis_data['pure_camelot']}
                     </h1>
-                    <p style="font-size:1.5em; font-weight:bold;">{analysis_data['confiance_pure'].upper()} ({analysis_data['pure_camelot']})</p>
+                    <p style="font-size:2em; font-weight:bold; margin-top:-10px; margin-bottom:20px; opacity:0.9;">
+                        {analysis_data['confiance_pure'].upper()}
+                    </p>
+                    
+                    <hr style="border:0; border-top:1px solid rgba(255,255,255,0.2); width:50%; margin: 20px auto;">
+            
+                    <p style="font-size:0.9em; opacity:0.7; font-family: 'JetBrains Mono', monospace;">
+                        DÉTAILS : Consonance {analysis_data['key'].upper()} ({analysis_data['conf']}%) 
+                        | Dominante {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_percentage']}%)
+                    </p>
+                    
                     {mod_alert}
                 </div>
             """, unsafe_allow_html=True)

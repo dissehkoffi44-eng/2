@@ -408,11 +408,6 @@ def process_audio(audio_file, file_name, progress_placeholder):
         avis_expert = f"🏆 DOMINANTE PLUS SOLIDE ({CAMELOT_MAP.get(dominant_key, '??')})"
         color_bandeau = "linear-gradient(135deg, #1e3a8a, #172554)" # Bleu foncé stable
     
-    if dominant_conf > (final_conf + 15) and dominant_conf > 75:
-        confiance_pure_key = dominant_key
-        avis_expert = f"🏆 DOMINANTE ÉCRASANTE ({CAMELOT_MAP.get(dominant_key, '??')})"
-        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Emeraude
-    
     # Sinon, on garde les règles habituelles
     elif mod_detected and ends_in_target:
         confiance_pure_key = target_key

@@ -564,7 +564,7 @@ if uploaded_files:
             # Affichage des deux tonalités côte à côte
             # --- COPPIE CE BLOC ET REMPLACE CELUI DE LA LIGNE 566 ---
             st.markdown(f"""
-                <div class="report-card" style="background:{analysis_data['color_bandeau']};">
+                <div class="report-card" style="background:{analysis_data['color_bandeau']}; text-align: center; padding: 30px; border-radius: 20px;">
                     <p style="letter-spacing:5px; opacity:0.8; font-size:0.7em; margin-bottom:0px;">
                         SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
                     </p>

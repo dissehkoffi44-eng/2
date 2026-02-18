@@ -584,7 +584,7 @@ if uploaded_files:
                     
                     {mod_alert}
                 </div>
-         """, unsafe_allow_html=True)
+     """, unsafe_allow_html=True)
             
             m1, m2, m3 = st.columns(3)
             with m1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{analysis_data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)

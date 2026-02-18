@@ -569,35 +569,33 @@ uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['m
 # Initialiser session_state pour stocker les analyses
 if 'analyses' not in st.session_state:
     st.session_state.analyses = {}
+if 'analyzing' not in st.session_state:
+    st.session_state.analyzing = False
 
 if uploaded_files:
     # Vérifier les fichiers non analysés
     files_to_analyze = [f for f in uploaded_files if f.name not in st.session_state.analyses]
     
-    if files_to_analyze:
-        # Analyser un fichier à la fois, en commençant par le dernier pour maintenir l'ordre inversé
-        f = files_to_analyze[-1]
-        global_status.info(f"Analyse de {f.name} en cours...")
+    if files_to_analyze and not st.session_state.analyzing:
+        st.session_state.analyzing = True
+        global_status.info("Analyse des fichiers en cours...")
         
         progress_zone = st.container()
         
-        file_bytes = f.getvalue()
-        analysis_data = process_audio(io.BytesIO(file_bytes), f.name, progress_zone)
-        st.session_state.analyses[f.name] = analysis_data
-        del file_bytes
-        gc.collect()
-        if len(st.session_state.analyses) > 5:  # Limite à 5 fichiers
-            oldest_file = next(iter(st.session_state.analyses))  # Premier ajouté
-            data = st.session_state.analyses[oldest_file]
-            if 'temp_dir' in data and os.path.exists(data['temp_dir']):
-                shutil.rmtree(data['temp_dir'])
-            del st.session_state.analyses[oldest_file]
+        for f in reversed(files_to_analyze):  # Garder reversed pour analyser les derniers en premier
+            file_bytes = f.getvalue()  # Charge seulement ici
+            analysis_data = process_audio(io.BytesIO(file_bytes), f.name, progress_zone)  # Passe BytesIO directement
+            st.session_state.analyses[f.name] = analysis_data
+            del file_bytes  # Libère immédiatement les bytes
+            gc.collect()  # Force le garbage collector
+            if len(st.session_state.analyses) > 5:  # Limite à 5 fichiers
+                oldest_file = next(iter(st.session_state.analyses))  # Premier ajouté
+                del st.session_state.analyses[oldest_file]
         
-        st.rerun()  # Relancer pour analyser le suivant et afficher les résultats progressifs
-    else:
         global_status.success("Tous les fichiers ont été analysés avec succès !")
+        st.session_state.analyzing = False
     
-    # Afficher les résultats pour tous les fichiers analysés (dans l'ordre inverse)
+    # Afficher les résultats pour tous les fichiers (dans l'ordre inverse pour cohérence)
     for i, f in enumerate(reversed(uploaded_files)):
         if f.name in st.session_state.analyses:
             analysis_data = st.session_state.analyses[f.name]
@@ -670,5 +668,6 @@ with st.sidebar:
             if 'temp_dir' in data and os.path.exists(data['temp_dir']):
                 shutil.rmtree(data['temp_dir'])
         st.session_state.analyses = {}
+        st.session_state.analyzing = False
         gc.collect()  # Ajout ici
         st.rerun()

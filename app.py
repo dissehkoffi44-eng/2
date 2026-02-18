@@ -389,6 +389,39 @@ def process_audio(audio_file, file_name, progress_placeholder):
                 last_key = last_counter.most_common(1)[0][0]
                 ends_in_target = (last_key == target_key)
 
+    # --- MOTEUR DE DÉCISION SNIPER V5.1 (Affiné) ---
+    
+    # Correction du bug de dépassement (Cas Bella 117%)
+    dominant_conf = min(dominant_conf, 99)
+    
+    # 1. Initialisation par défaut (Consonance)
+    confiance_pure_key = final_key
+    avis_expert = "✅ ANALYSE STABLE"
+    color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Sniper
+
+    # 2. RÈGLE : FIN SUR MODULATION (Priorité absolue si > 20% du temps)
+    # Utilise target_percentage (Ligne 383) et ends_in_target (Ligne 390)
+    if mod_detected and ends_in_target and target_percentage > 20:
+        confiance_pure_key = target_key
+        avis_expert = f"🏁 FIN SUR MODULATION ({target_camelot})"
+        color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)" # Bleu nuit
+
+    # 3. RÈGLE : SAUVETAGE PAR DOMINANTE (Cas Rihanna / MHD)
+    # Si la dominante est beaucoup plus crédible que la consonance
+    elif dominant_conf > (final_conf + 15) and dominant_conf > 75:
+        confiance_pure_key = dominant_key
+        avis_expert = f"🏆 DOMINANTE ÉCRASANTE ({CAMELOT_MAP.get(dominant_key, '??')})"
+        color_bandeau = "linear-gradient(135deg, #1e3a8a, #172554)" # Bleu Royal
+
+    # 4. RÈGLE : HÉSITATION (Orange)
+    elif final_conf < 75:
+        avis_expert = "🎹 TESTER L'ACCORD (Confiance limitée)"
+        color_bandeau = "linear-gradient(135deg, #92400e, #451a03)" # Orange/Marron
+
+    # Préparation des textes pour l'affichage final
+    pure_camelot = CAMELOT_MAP.get(confiance_pure_key, "??")
+    confiance_pure = f"{confiance_pure_key.upper()} ({pure_camelot})"
+
     tempo, _ = librosa.beat.beat_track(y=y_harm, sr=sr)  # Tempo sur section harmonique
 
     update_prog(100, "Analyse terminée")

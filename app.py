@@ -552,7 +552,7 @@ if uploaded_files:
     
     progress_zone = st.container()
     
-    for f in reversed(uploaded_files):
+    for i, f in enumerate(reversed(uploaded_files)):
         analysis_data = process_audio(f, f.name, progress_zone)
         
         with st.container():
@@ -596,11 +596,11 @@ if uploaded_files:
             with c1:
                 fig_tl = px.line(pd.DataFrame(analysis_data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
                 fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_tl, use_container_width=True, key=f"timeline_{analysis_data['name']}")
+                st.plotly_chart(fig_tl, use_container_width=True, key=f"timeline_{analysis_data['name']}_{i}")
             with c2:
                 fig_radar = go.Figure(data=go.Scatterpolar(r=analysis_data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
                 fig_radar.update_layout(template="plotly_dark", height=300, margin=dict(l=40, r=40, t=30, b=20), polar=dict(radialaxis=dict(visible=False)), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{analysis_data['name']}")
+                st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{analysis_data['name']}_{i}")
             
             st.markdown("<hr style='border-color: #30363d; margin-bottom:40px;'>", unsafe_allow_html=True)
     

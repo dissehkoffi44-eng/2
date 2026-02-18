@@ -547,68 +547,87 @@ global_status = st.empty()
 
 uploaded_files = st.file_uploader("📥 Déposez vos fichiers (Audio)", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
-if uploaded_files:
-    global_status.info("Analyse des fichiers en cours...")
-    
-    progress_zone = st.container()
-    
-    for i, f in enumerate(reversed(uploaded_files)):
-        analysis_data = process_audio(f, f.name, progress_zone)
-        
-        with st.container():
-            st.markdown(f"<div class='file-header'>📂 ANALYSE : {analysis_data['name']}</div>", unsafe_allow_html=True)
-            
-            mod_alert = ""
-            if analysis_data['modulation']:
-                mod_alert = f"<div class='modulation-alert'>⚠️ MODULATION : {analysis_data['target_key'].upper()} ({analysis_data['target_camelot']}) &nbsp; | &nbsp; CONFIANCE: <b>{analysis_data['target_conf']}%</b></div>"
-            
-            # Affichage des deux tonalités côte à côte
-            st.markdown(f"""
-                <div class="report-card" style="background:{analysis_data['color_bandeau']};">
-                    <p style="letter-spacing:5px; opacity:0.8; font-size:0.7em; margin-bottom:0px;">
-                        SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
-                    </p>
-                    <h1 style="font-size:5em; margin:0px 0; font-weight:900; line-height:1; text-align: center;">
-                        {analysis_data['pure_camelot']}
-                    </h1>
-                    <p style="font-size:2em; font-weight:bold; margin-top:-10px; margin-bottom:20px; opacity:0.9; text-align: center;">
-                        {analysis_data['confiance_pure'].upper()}
-                    </p>
-                    <hr style="border:0; border-top:1px solid rgba(255,255,255,0.2); width:50%; margin: 20px auto;">
-                    <p style="font-size:0.9em; opacity:0.7; font-family: 'JetBrains Mono', monospace;">
-                        DÉTAILS : Consonance {analysis_data['key'].upper()} ({analysis_data['conf']}%) 
-                        | Dominante {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_percentage']}%)
-                    </p>
-                    {mod_alert}
-                </div>
-            """, unsafe_allow_html=True)
-            
-            m2, m3 = st.columns(2)
-            with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{analysis_data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
-            with m3:
-                btn_id = f"play_{hash(analysis_data['name'])}"
-                components.html(f"""
-                    <button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #4F46E5, #7C3AED); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🎹 TESTER L'ACCORD</button>
-                    <script>{get_chord_js(btn_id, analysis_data['key'])}</script>
-                """, height=110)
+# Initialiser session_state pour stocker les analyses
+if 'analyses' not in st.session_state:
+    st.session_state.analyses = {}
+if 'analyzing' not in st.session_state:
+    st.session_state.analyzing = False
 
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                fig_tl = px.line(pd.DataFrame(analysis_data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
-                fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_tl, use_container_width=True, key=f"timeline_{analysis_data['name']}_{i}")
-            with c2:
-                fig_radar = go.Figure(data=go.Scatterpolar(r=analysis_data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
-                fig_radar.update_layout(template="plotly_dark", height=300, margin=dict(l=40, r=40, t=30, b=20), polar=dict(radialaxis=dict(visible=False)), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{analysis_data['name']}_{i}")
-            
-            st.markdown("<hr style='border-color: #30363d; margin-bottom:40px;'>", unsafe_allow_html=True)
+if uploaded_files:
+    # Vérifier les fichiers non analysés
+    files_to_analyze = [f for f in uploaded_files if f.name not in st.session_state.analyses]
     
-    global_status.success("Tous les fichiers ont été analysés avec succès !")
+    if files_to_analyze and not st.session_state.analyzing:
+        st.session_state.analyzing = True
+        global_status.info("Analyse des fichiers en cours...")
+        
+        progress_zone = st.container()
+        
+        for f in reversed(files_to_analyze):  # Garder reversed pour analyser les derniers en premier
+            analysis_data = process_audio(f, f.name, progress_zone)
+            st.session_state.analyses[f.name] = analysis_data
+        
+        global_status.success("Tous les fichiers ont été analysés avec succès !")
+        st.session_state.analyzing = False
+    
+    # Afficher les résultats pour tous les fichiers (dans l'ordre inverse pour cohérence)
+    for i, f in enumerate(reversed(uploaded_files)):
+        if f.name in st.session_state.analyses:
+            analysis_data = st.session_state.analyses[f.name]
+            
+            with st.container():
+                st.markdown(f"<div class='file-header'>📂 ANALYSE : {analysis_data['name']}</div>", unsafe_allow_html=True)
+                
+                mod_alert = ""
+                if analysis_data['modulation']:
+                    mod_alert = f"<div class='modulation-alert'>⚠️ MODULATION : {analysis_data['target_key'].upper()} ({analysis_data['target_camelot']}) &nbsp; | &nbsp; CONFIANCE: <b>{analysis_data['target_conf']}%</b></div>"
+                
+                # Affichage des deux tonalités côte à côte
+                st.markdown(f"""
+                    <div class="report-card" style="background:{analysis_data['color_bandeau']};">
+                        <p style="letter-spacing:5px; opacity:0.8; font-size:0.7em; margin-bottom:0px;">
+                            SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
+                        </p>
+                        <h1 style="font-size:5em; margin:0px 0; font-weight:900; line-height:1; text-align: center;">
+                            {analysis_data['pure_camelot']}
+                        </h1>
+                        <p style="font-size:2em; font-weight:bold; margin-top:-10px; margin-bottom:20px; opacity:0.9; text-align: center;">
+                            {analysis_data['confiance_pure'].upper()}
+                        </p>
+                        <hr style="border:0; border-top:1px solid rgba(255,255,255,0.2); width:50%; margin: 20px auto;">
+                        <p style="font-size:0.9em; opacity:0.7; font-family: 'JetBrains Mono', monospace;">
+                            DÉTAILS : Consonance {analysis_data['key'].upper()} ({analysis_data['conf']}%) 
+                            | Dominante {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_percentage']}%)
+                        </p>
+                        {mod_alert}
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                m2, m3 = st.columns(2)
+                with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{analysis_data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
+                with m3:
+                    btn_id = f"play_{hash(analysis_data['name'])}"
+                    components.html(f"""
+                        <button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #4F46E5, #7C3AED); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🎹 TESTER L'ACCORD</button>
+                        <script>{get_chord_js(btn_id, analysis_data['key'])}</script>
+                    """, height=110)
+
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    fig_tl = px.line(pd.DataFrame(analysis_data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
+                    fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_tl, use_container_width=True, key=f"timeline_{analysis_data['name']}_{i}")
+                with c2:
+                    fig_radar = go.Figure(data=go.Scatterpolar(r=analysis_data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
+                    fig_radar.update_layout(template="plotly_dark", height=300, margin=dict(l=40, r=40, t=30, b=20), polar=dict(radialaxis=dict(visible=False)), paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_radar, use_container_width=True, key=f"radar_{analysis_data['name']}_{i}")
+                
+                st.markdown("<hr style='border-color: #30363d; margin-bottom:40px;'>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2569/2569107.png", width=80)
     st.header("Sniper Control")
     if st.button("🧹 Vider la file d'analyse"):
-        st.cache_data.clear()
+        st.session_state.analyses = {}
+        st.session_state.analyzing = False
         st.rerun()

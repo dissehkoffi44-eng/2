@@ -569,12 +569,12 @@ if uploaded_files:
                     SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
                 </p>
                 
-                <h1 style="font-size: 6em; margin: 0; font-weight: 900; line-height: 1;">
-                    {analysis_data['pure_camelot']}
-                </h1>
-                
-                <p style="font-size: 2.2em; font-weight: bold; margin: 0; opacity: 0.9;">
-                    {analysis_data['confiance_pure'].upper()}
+                    <h1 style="font-size: 6em; margin: 0; font-weight: 900; line-height: 1;">
+                        {analysis_data['pure_camelot']}
+                    </h1>
+                    
+                    <p style="font-size: 2.2em; font-weight: bold; margin: 0; opacity: 0.9;">
+                        {analysis_data['confiance_pure'].upper()}
                 </p>
                 
                 <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); width: 30%; margin: 20px auto;">

@@ -562,14 +562,12 @@ if uploaded_files:
                 mod_alert = f"<div class='modulation-alert'>⚠️ MODULATION : {analysis_data['target_key'].upper()} ({analysis_data['target_camelot']}) &nbsp; | &nbsp; CONFIANCE: <b>{analysis_data['target_conf']}%</b></div>"
             
             # Affichage des deux tonalités côte à côte
-            # --- COPPIE CE BLOC ET REMPLACE CELUI DE LA LIGNE 566 ---
-            # --- COPPIE CE BLOC ET REMPLACE CELUI DE LA LIGNE 566 ---
             st.markdown(f"""
                 <div class="report-card" style="background:{analysis_data['color_bandeau']};">
                     <p style="letter-spacing:5px; opacity:0.8; font-size:0.7em; margin-bottom:0px;">
                         SNIPER ENGINE v5.0 | {analysis_data['avis_expert']}
                     </p>
-                    <h1 style="font-size:5em; margin:0px 0; font-weight:900; line-height:1;">
+                    <h1 style="font-size:5em; margin:0px 0; font-weight:900; line-height:1; text-align: center;">
                         {analysis_data['pure_camelot']}
                     </h1>
                     <p style="font-size:2em; font-weight:bold; margin-top:-10px; margin-bottom:20px; opacity:0.9; text-align: center;">

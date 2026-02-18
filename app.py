@@ -395,69 +395,48 @@ def process_audio(audio_file, file_name, progress_placeholder):
     status_text.empty()
     progress_bar.empty()
 
-    # --- MOTEUR DE DÉCISION SNIPER ---
-    dominant_conf = min(dominant_conf, 99)  # Correction du bug de dépassement
-
-    confiance_pure_key = final_key
+    # --- MOTEUR DE DÉCISION SNIPER V5.5 (Verrouillage Diamant) ---
+    
+    # 1. Nettoyage et Initialisation
+    dominant_conf = min(dominant_conf, 99) # Plafonne le bug du 117%
+    confiance_pure_key = final_key # Par défaut
     avis_expert = "✅ ANALYSE STABLE"
     color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)"
 
-    # --- RÈGLE DE CONCORDANCE FORTE (Priorité Stabilité) ---
-    
-    # 1. On vérifie si la Consonance et la Dominante pointent vers la même note
-    # avec une confiance de Consonance supérieure à 85%
-    is_solid_match = (final_key == dominant_key and final_conf > 85)
-
-    if is_solid_match:
-        # Dans ce cas, on ignore toute modulation, on reste sur la base solide
+    # 2. RÈGLE D'OR : LE VERROU 99% (Priorité Absolue)
+    # Si la consonance est parfaite, on ignore TOUT (Modulation et Dominante)
+    if final_conf >= 99:
         confiance_pure_key = final_key
-        avis_expert = "💎 ANALYSE ULTRA-STABLE"
-        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Émeraude
+        avis_expert = "💎 ANALYSE INDISCUTABLE (99%)"
+        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Sniper Profond
 
-    # Si la consonance est trop faible mais que la dominante est solide
-    if final_conf < 55 and dominant_conf > 70:
-        confiance_pure_key = dominant_key
-        avis_expert = f"🏆 DOMINANTE PLUS SOLIDE ({CAMELOT_MAP.get(dominant_key, '??')})"
-        color_bandeau = "linear-gradient(135deg, #1e3a8a, #172554)" # Bleu foncé stable
-    
-    if dominant_conf > (final_conf + 15) and dominant_conf > 75:
+    # 3. RÈGLE : CONCORDANCE FORTE (Consonance + Dominante d'accord)
+    elif final_key == dominant_key and final_conf > 85:
+        confiance_pure_key = final_key
+        avis_expert = "🎯 SNIPER LOCK : Mixage sûr"
+        color_bandeau = "linear-gradient(135deg, #059669, #064e3b)"
+
+    # 4. RÈGLE : SAUVETAGE PAR DOMINANTE (Cas Rihanna/MHD)
+    elif dominant_conf > (final_conf + 15) and dominant_conf > 75:
         confiance_pure_key = dominant_key
         avis_expert = f"🏆 DOMINANTE ÉCRASANTE ({CAMELOT_MAP.get(dominant_key, '??')})"
-        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert Emeraude
-    
-    # 2. Sinon, on regarde si une modulation de fin est vraiment importante
-    elif not is_solid_match and mod_detected and ends_in_target and target_percentage > 30:
+        color_bandeau = "linear-gradient(135deg, #1e3a8a, #172554)"
+
+    # 5. RÈGLE : MODULATION DE FIN (Seulement si pas de verrou 99% et > 30%)
+    elif mod_detected and ends_in_target and target_percentage > 30:
         confiance_pure_key = target_key
         avis_expert = f"🏁 FIN SUR MODULATION ({CAMELOT_MAP.get(target_key, '??')})"
-        color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)" # Bleu nuit
+        color_bandeau = "linear-gradient(135deg, #4338ca, #1e1b4b)"
 
-    # CAS SPÉCIFIQUE : ÉCRASEMENT PAR LA DOMINANTE (Cas Rich Homie Quan)
-    elif dominant_percentage > 80 and dominant_conf > final_conf:
-        confiance_pure_key = dominant_key
-        avis_expert = "🔥 DOMINANCE TOTALE : Priorité à la présence sonore"
-        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)" # Vert
-
-    # CAS 2 : CONFLIT RELATIF (ex: 11A vs 11B)
-    elif abs(int(CAMELOT_MAP.get(final_key, '0A')[:-1]) - int(dominant_camelot[:-1])) == 0:
-        confiance_pure_key = dominant_key
-        avis_expert = "🌓 ÉNERGIE DOMINANTE (Relatif)"
-        color_bandeau = "linear-gradient(135deg, #065f46, #064e3b)"
-
-    # CAS 3 : SIGNAL TROP FAIBLE (Le cas de votre image Toofan)
-    elif final_conf < 55 and dominant_percentage < 40:
+    # 6. GESTION DES ALERTES (Signal Faible)
+    elif final_conf < 55:
         confiance_pure_key = "À VÉRIFIER"
         avis_expert = "⚠️ DANGER : Signal incohérent"
         color_bandeau = "linear-gradient(135deg, #7f1d1d, #450a0a)"
-
-    # CAS 4 : CONFIANCE MOYENNE / HÉSITATION
+    
     elif final_conf < 75:
         avis_expert = "🎹 TESTER L'ACCORD (Confiance limitée)"
         color_bandeau = "linear-gradient(135deg, #92400e, #451a03)"
-
-    # CAS 5 : CERTITUDE
-    elif final_conf > 85:
-        avis_expert = "🎯 SNIPER LOCK : Mixage sûr"
-        color_bandeau = "linear-gradient(135deg, #059669, #064e3b)"
 
     res_obj = {
         "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),

@@ -573,32 +573,28 @@ if 'analyzing' not in st.session_state:
     st.session_state.analyzing = False
 
 if uploaded_files:
-    # Vérifier les fichiers non analysés
-    files_to_analyze = [f for f in uploaded_files if f.name not in st.session_state.analyses]
+    global_status.info("Analyse des fichiers en cours...")
+    progress_zone = st.container()
     
-    if files_to_analyze and not st.session_state.analyzing:
-        st.session_state.analyzing = True
-        global_status.info("Analyse des fichiers en cours...")
+    # Boucle sur les fichiers en reversed pour cohérence
+    for i, f in enumerate(reversed(uploaded_files)):
+        file_name = f.name
         
-        progress_zone = st.container()
-        
-        for f in reversed(files_to_analyze):  # Garder reversed pour analyser les derniers en premier
-            file_bytes = f.getvalue()  # Charge seulement ici
-            analysis_data = process_audio(io.BytesIO(file_bytes), f.name, progress_zone)  # Passe BytesIO directement
-            st.session_state.analyses[f.name] = analysis_data
-            del file_bytes  # Libère immédiatement les bytes
-            gc.collect()  # Force le garbage collector
-            if len(st.session_state.analyses) > 5:  # Limite à 5 fichiers
-                oldest_file = next(iter(st.session_state.analyses))  # Premier ajouté
+        if file_name not in st.session_state.analyses:
+            st.session_state.analyzing = True
+            # Analyser le fichier
+            analysis_data = process_audio(f, file_name, progress_zone)
+            st.session_state.analyses[file_name] = analysis_data
+            # Limiter à 5 fichiers max en session_state
+            if len(st.session_state.analyses) > 5:
+                oldest_file = next(iter(st.session_state.analyses))
+                if 'temp_dir' in st.session_state.analyses[oldest_file] and os.path.exists(st.session_state.analyses[oldest_file]['temp_dir']):
+                    shutil.rmtree(st.session_state.analyses[oldest_file]['temp_dir'])
                 del st.session_state.analyses[oldest_file]
         
-        global_status.success("Tous les fichiers ont été analysés avec succès !")
-        st.session_state.analyzing = False
-    
-    # Afficher les résultats pour tous les fichiers (dans l'ordre inverse pour cohérence)
-    for i, f in enumerate(reversed(uploaded_files)):
-        if f.name in st.session_state.analyses:
-            analysis_data = st.session_state.analyses[f.name]
+        # Afficher le résultat immédiatement après analyse (ou si déjà analysé)
+        if file_name in st.session_state.analyses:
+            analysis_data = st.session_state.analyses[file_name]
             
             # Charge depuis disque seulement pour l'affichage
             with open(analysis_data['timeline_path'], 'rb') as tf:
@@ -612,7 +608,7 @@ if uploaded_files:
                 if analysis_data['modulation']:
                     mod_alert = f"<div class='modulation-alert'>⚠️ MODULATION : {analysis_data['target_key'].upper()} ({analysis_data['target_camelot']}) &nbsp; | &nbsp; CONFIANCE: <b>{analysis_data['target_conf']}%</b></div>"
                 
-                # Affichage des deux tonalités côte à côte
+                # Affichage des deux tonalités côte à côte avec ajout de dominant_conf
                 st.markdown(f"""
                     <div class="report-card" style="background:{analysis_data['color_bandeau']};">
                         <p style="letter-spacing:5px; opacity:0.8; font-size:0.7em; margin-bottom:0px;">
@@ -627,7 +623,7 @@ if uploaded_files:
                         <hr style="border:0; border-top:1px solid rgba(255,255,255,0.2); width:50%; margin: 20px auto;">
                         <p style="font-size:0.9em; opacity:0.7; font-family: 'JetBrains Mono', monospace;">
                             DÉTAILS : Consonance {analysis_data['key'].upper()} ({analysis_data['conf']}%) 
-                            | Dominante {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_percentage']}%)
+                            | Dominante {analysis_data['dominant_key'].upper()} ({analysis_data['dominant_percentage']}%) | Confiance Dominante {analysis_data['dominant_conf']}%
                         </p>
                         {mod_alert}
                     </div>
@@ -658,6 +654,8 @@ if uploaded_files:
             del timeline, chroma
             gc.collect()
     
+    st.session_state.analyzing = False
+    global_status.success("Tous les fichiers ont été analysés avec succès !")
     gc.collect()
 
 with st.sidebar:
